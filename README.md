@@ -106,6 +106,7 @@ node --test test.mjs background.test.mjs
 npx --yes web-ext lint \
   --ignore-files test.mjs background.test.mjs README.md
 npx --yes web-ext build \
+  --overwrite-dest \
   --ignore-files test.mjs background.test.mjs README.md
 ```
 
