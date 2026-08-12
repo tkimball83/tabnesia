@@ -269,9 +269,11 @@ test('background behavior', async (t) => {
     assert.equal(state.markers.has(1), false);
   });
 
-  await t.test('startup does not reload managed tabs', async () => {
-    const { calls } = await setup();
-    assert.deepEqual(calls, []);
+  await t.test('startup does not rescan or reload managed tabs', async () => {
+    const state = await setup();
+    await state.events.startup.listener();
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
+    assert.deepEqual(state.calls, []);
   });
 
   await t.test('managed pins are restored to configured order', async () => {

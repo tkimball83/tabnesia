@@ -218,10 +218,10 @@ browser.storage.onChanged.addListener((changes, area) => {
   return undefined;
 });
 browser.runtime.onStartup.addListener(() => (
-  reconcileAll().catch(console.error)
+  bootstrap().catch(console.error)
 ));
 browser.runtime.onInstalled.addListener(() => (
-  reconcileAll().catch(console.error)
+  bootstrap().catch(console.error)
 ));
 
 async function bootstrap() {
