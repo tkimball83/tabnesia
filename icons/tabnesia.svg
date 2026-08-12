@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Tabnesia</title>
+  <rect width="512" height="512" rx="112" fill="#f7f4ee"/>
+  <path fill="#7894b9" d="M76 154c0-22 18-40 40-40h168c18 0 34 10 42 26l17 34h67c22 0 40 18 40 40v118H76z"/>
+  <path fill="#123a6d" d="M62 230c0-22 18-40 40-40h176c18 0 34 10 42 26l17 34h73c22 0 40 18 40 40v112H62z"/>
+  <path fill="#ff6542" fill-rule="evenodd" d="M410 278a94 94 0 1 0 0 132l-24-24a60 60 0 1 1 0-84z"/>
+  <path fill="#ff6542" d="m383 382 59 28-53 35z"/>
+</svg>

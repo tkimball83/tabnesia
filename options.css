@@ -1,0 +1,84 @@
+:root {
+  font: menu;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+#pins {
+  padding: 0;
+  list-style: none;
+}
+
+.pin {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: .4rem;
+  margin: .5rem 0;
+}
+
+.pin.dragging {
+  opacity: .45;
+}
+
+.url {
+  min-width: 10rem;
+  padding: .45rem;
+}
+
+button,
+.button {
+  padding: .45rem .7rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#import:focus-visible + .button {
+  outline: 2px solid AccentColor;
+  outline-offset: 2px;
+}
+
+.button {
+  border: 1px solid ButtonBorder;
+  border-radius: 2px;
+  background: ButtonFace;
+  color: ButtonText;
+  cursor: default;
+}
+
+.drag {
+  align-self: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.private-setting {
+  display: block;
+  margin: 1.5rem 0 .5rem;
+}
+
+.help,
+#status {
+  min-height: 1.2em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1.5rem;
+}
