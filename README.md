@@ -17,8 +17,8 @@ when closed, unpinned, or moved.
 
 Removing a URL from the list unpins its tab without closing it.
 
-Settings return after reinstalling when Firefox sync is enabled for add-ons.
-Export a backup before uninstalling if Firefox sync is not enabled.
+Firefox sync can restore settings to other desktop profiles when add-on sync is
+enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
 
 ## Development
 
