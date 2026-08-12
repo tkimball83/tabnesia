@@ -17,8 +17,8 @@ when closed, unpinned, or moved.
 
 Removing a URL from the list unpins its tab without closing it.
 
-Settings return after reinstalling when Firefox sync is enabled for add-ons.
-Export a backup before uninstalling if Firefox sync is not enabled.
+Firefox sync can restore settings to other desktop profiles when add-on sync is
+enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
 
 ## Development
 
@@ -36,28 +36,12 @@ profile into a dedicated test profile.
 
 #### Find the default profile
 
-On macOS, Firefox records installation default profiles in `profiles.ini`.
-This command continues only when they resolve to one profile:
+On macOS, find the default release profile:
 
 ```sh
-FIREFOX_HOME="${HOME}/Library/Application Support/Firefox"
-PROFILE_PATH=$(awk -F= \
-  '/^\[Install/ { active = 1; next }
-   /^\[/ { active = 0 }
-   active && /^Default=/ { print $2 }' \
-  "${FIREFOX_HOME}/profiles.ini" | sort -u)
-PROFILE_COUNT=$(printf '%s\n' "${PROFILE_PATH}" | awk \
-  'NF { count++ } END { print count }')
-
-if test "${PROFILE_COUNT}" -ne 1; then
-  echo "Could not identify one Firefox installation profile"
-  echo "Choose the correct Default= entry from profiles.ini"
-  exit 1
-fi
-
-SOURCE="${FIREFOX_HOME}/${PROFILE_PATH}"
-
-printf 'Default profile: %s\n' "${SOURCE}"
+PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
+SOURCE_PROFILE=$(find "${PROFILES_DIR}" -maxdepth 1 \
+  -type d -name '*.default-release*' -print -quit)
 ```
 
 #### Create the test profile
@@ -65,26 +49,15 @@ printf 'Default profile: %s\n' "${SOURCE}"
 Quit Firefox before copying. Create the clone once:
 
 ```sh
-TEST="${FIREFOX_HOME}/Profiles/tabnesia"
-
-if ! test -f "${SOURCE}/prefs.js"; then
-  echo "Default Firefox profile not found"
-  exit 1
-fi
-
-if test -e "${TEST}"; then
-  echo "Test profile already exists; skip this copy step"
-  exit 1
-fi
-
-ditto "${SOURCE}" "${TEST}"
+TEST_PROFILE="${PROFILES_DIR}/tabnesia"
+ditto "${SOURCE_PROFILE}" "${TEST_PROFILE}"
 ```
 
 Reuse the clone on later runs:
 
 ```sh
-TEST_PROFILE="${HOME}/Library/Application Support/Firefox/Profiles"
-TEST_PROFILE="${TEST_PROFILE}/tabnesia"
+PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
+TEST_PROFILE="${PROFILES_DIR}/tabnesia"
 
 npx --yes web-ext run \
   --firefox /opt/homebrew/bin/firefox \
@@ -103,6 +76,7 @@ node --test test.mjs background.test.mjs
 npx --yes web-ext lint \
   --ignore-files test.mjs background.test.mjs README.md
 npx --yes web-ext build \
+  --overwrite-dest \
   --ignore-files test.mjs background.test.mjs README.md
 ```
 

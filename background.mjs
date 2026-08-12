@@ -6,6 +6,7 @@ const pending = new Map();
 const running = new Map();
 const managedIds = new Set();
 const initializedWindows = new Set();
+let bootstrapTask;
 
 async function release(tab) {
   if (tab.pinned) await browser.tabs.update(tab.id, { pinned: false });
@@ -22,7 +23,10 @@ async function reconcileWindow(windowId, resetUrls = false) {
   }
   if (window.type !== 'normal') return;
   const current = await findSettings(browser.storage);
-  if (!current) return;
+  if (!current) {
+    initializedWindows.add(windowId);
+    return;
+  }
   const privateAllowed = !window.incognito
     || await browser.extension.isAllowedIncognitoAccess();
   const shouldManage = !window.incognito
@@ -215,17 +219,23 @@ browser.storage.onChanged.addListener((changes, area) => {
   return undefined;
 });
 browser.runtime.onStartup.addListener(() => (
-  reconcileAll().catch(console.error)
+  bootstrap().catch(console.error)
 ));
 browser.runtime.onInstalled.addListener(() => (
-  reconcileAll().catch(console.error)
+  bootstrap().catch(console.error)
 ));
 
-async function bootstrap() {
-  const state = await browser.storage.session.get(BOOTSTRAP_KEY);
-  if (state[BOOTSTRAP_KEY]) return;
-  await reconcileAll();
-  await browser.storage.session.set({ [BOOTSTRAP_KEY]: true });
+function bootstrap() {
+  bootstrapTask ??= (async () => {
+    const state = await browser.storage.session.get(BOOTSTRAP_KEY);
+    if (state[BOOTSTRAP_KEY]) return;
+    await reconcileAll();
+    await browser.storage.session.set({ [BOOTSTRAP_KEY]: true });
+  })().catch((error) => {
+    bootstrapTask = undefined;
+    throw error;
+  });
+  return bootstrapTask;
 }
 
 bootstrap().catch(console.error);
