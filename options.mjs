@@ -49,6 +49,8 @@ async function restore() {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  status.textContent = 'Saving…';
+  form.inert = true;
   try {
     const current = await saveSettings(browser.storage, {
       urls: [...list.querySelectorAll('.url')].map((input) => input.value),
@@ -58,6 +60,8 @@ form.addEventListener('submit', async (event) => {
     status.textContent = 'Saved';
   } catch (error) {
     status.textContent = error.message;
+  } finally {
+    form.inert = false;
   }
 });
 
@@ -113,6 +117,8 @@ list.addEventListener('dragend', () => {
 });
 
 document.querySelector('#export').addEventListener('click', async () => {
+  status.textContent = 'Exporting…';
+  form.inert = true;
   try {
     const current = await loadSettings(browser.storage);
     const blob = new Blob(
@@ -129,12 +135,16 @@ document.querySelector('#export').addEventListener('click', async () => {
     status.textContent = 'Backup exported';
   } catch (error) {
     status.textContent = error.message;
+  } finally {
+    form.inert = false;
   }
 });
 
 document.querySelector('#import').addEventListener('change', async (event) => {
   const [file] = event.target.files;
   if (!file) return;
+  status.textContent = 'Importing…';
+  form.inert = true;
   try {
     const imported = parseBackup(await file.text());
     await saveSettings(browser.storage, imported);
@@ -145,6 +155,7 @@ document.querySelector('#import').addEventListener('change', async (event) => {
     status.textContent = error.message;
   } finally {
     event.target.value = '';
+    form.inert = false;
   }
 });
 
