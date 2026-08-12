@@ -12,6 +12,7 @@ function event() {
 }
 
 async function setup({
+  bootstrapFailures = 0,
   initialTabs = [{
     id: 1,
     windowId: 10,
@@ -53,6 +54,7 @@ async function setup({
   let failedUpdateId;
   let sessionReads = 0;
   let syncReads = 0;
+  let bootstrapReads = 0;
   const sessionStorage = {};
 
   globalThis.browser = {
@@ -99,7 +101,14 @@ async function setup({
         },
       },
       session: {
-        get: async (key) => ({ [key]: sessionStorage[key] }),
+        get: async (key) => {
+          bootstrapReads += 1;
+          if (bootstrapFailures > 0) {
+            bootstrapFailures -= 1;
+            throw new Error('Bootstrap read failed');
+          }
+          return { [key]: sessionStorage[key] };
+        },
         set: async (value) => Object.assign(sessionStorage, value),
       },
       onChanged: events.storage,
@@ -176,6 +185,7 @@ async function setup({
   calls.length = 0;
   sessionReads = 0;
   syncReads = 0;
+  bootstrapReads = 0;
 
   return {
     bootCalls,
@@ -183,6 +193,7 @@ async function setup({
     events,
     markers,
     tabs,
+    bootstrapReads: () => bootstrapReads,
     failMarker() {
       failNextMarker = true;
     },
@@ -217,6 +228,18 @@ test('background behavior', async (t) => {
         pinned: true,
       },
     ]]);
+  });
+
+  await t.test('bootstrap retries after a transient failure', async () => {
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      const state = await setup({ bootstrapFailures: 1, initialTabs: [] });
+      assert.equal(state.tabs.length, 1);
+      assert.equal(state.markers.get(1), '0');
+    } finally {
+      console.error = originalError;
+    }
   });
 
   await t.test('missing sync data preserves managed tabs', async () => {
@@ -271,7 +294,11 @@ test('background behavior', async (t) => {
 
   await t.test('startup does not rescan or reload managed tabs', async () => {
     const state = await setup();
-    await state.events.startup.listener();
+    await Promise.all([
+      state.events.startup.listener(),
+      state.events.installed.listener(),
+    ]);
+    assert.equal(state.bootstrapReads(), 0);
     assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
     assert.deepEqual(state.calls, []);
   });

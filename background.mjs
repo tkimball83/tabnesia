@@ -6,6 +6,7 @@ const pending = new Map();
 const running = new Map();
 const managedIds = new Set();
 const initializedWindows = new Set();
+let bootstrapTask;
 
 async function release(tab) {
   if (tab.pinned) await browser.tabs.update(tab.id, { pinned: false });
@@ -224,11 +225,17 @@ browser.runtime.onInstalled.addListener(() => (
   bootstrap().catch(console.error)
 ));
 
-async function bootstrap() {
-  const state = await browser.storage.session.get(BOOTSTRAP_KEY);
-  if (state[BOOTSTRAP_KEY]) return;
-  await reconcileAll();
-  await browser.storage.session.set({ [BOOTSTRAP_KEY]: true });
+function bootstrap() {
+  bootstrapTask ??= (async () => {
+    const state = await browser.storage.session.get(BOOTSTRAP_KEY);
+    if (state[BOOTSTRAP_KEY]) return;
+    await reconcileAll();
+    await browser.storage.session.set({ [BOOTSTRAP_KEY]: true });
+  })().catch((error) => {
+    bootstrapTask = undefined;
+    throw error;
+  });
+  return bootstrapTask;
 }
 
 bootstrap().catch(console.error);
