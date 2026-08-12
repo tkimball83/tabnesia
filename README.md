@@ -40,13 +40,13 @@ On macOS, Firefox records installation default profiles in `profiles.ini`.
 This command continues only when they resolve to one profile:
 
 ```sh
-FIREFOX_HOME="${HOME}/Library/Application Support/Firefox"
-PROFILE_PATH=$(awk \
+FIREFOX_DIR="${HOME}/Library/Application Support/Firefox"
+SOURCE_PROFILE=$(awk \
   '/^\[Install/ { active = 1; next }
    /^\[/ { active = 0 }
    active && /^Default=/ { sub(/^Default=/, ""); print }' \
-  "${FIREFOX_HOME}/profiles.ini" | sort -u)
-PROFILE_COUNT=$(printf '%s\n' "${PROFILE_PATH}" | awk \
+  "${FIREFOX_DIR}/profiles.ini" | sort -u)
+PROFILE_COUNT=$(printf '%s\n' "${SOURCE_PROFILE}" | awk \
   'NF { count++ } END { print count }')
 
 if test "${PROFILE_COUNT}" -ne 1; then
@@ -55,12 +55,12 @@ if test "${PROFILE_COUNT}" -ne 1; then
   exit 1
 fi
 
-case "${PROFILE_PATH}" in
-  /*) SOURCE="${PROFILE_PATH}" ;;
-  *) SOURCE="${FIREFOX_HOME}/${PROFILE_PATH}" ;;
+case "${SOURCE_PROFILE}" in
+  /*) ;;
+  *) SOURCE_PROFILE="${FIREFOX_DIR}/${SOURCE_PROFILE}" ;;
 esac
 
-printf 'Default profile: %s\n' "${SOURCE}"
+printf 'Default profile: %s\n' "${SOURCE_PROFILE}"
 ```
 
 #### Create the test profile
@@ -68,26 +68,26 @@ printf 'Default profile: %s\n' "${SOURCE}"
 Quit Firefox before copying. Create the clone once:
 
 ```sh
-TEST="${FIREFOX_HOME}/Profiles/tabnesia"
+TEST_PROFILE="${FIREFOX_DIR}/Profiles/tabnesia"
 
-if ! test -f "${SOURCE}/prefs.js"; then
+if ! test -f "${SOURCE_PROFILE}/prefs.js"; then
   echo "Default Firefox profile not found"
   exit 1
 fi
 
-if test -e "${TEST}"; then
+if test -e "${TEST_PROFILE}"; then
   echo "Test profile already exists; skip this copy step"
   exit 1
 fi
 
-ditto "${SOURCE}" "${TEST}"
+ditto "${SOURCE_PROFILE}" "${TEST_PROFILE}"
 ```
 
 Reuse the clone on later runs:
 
 ```sh
-TEST_PROFILE="${HOME}/Library/Application Support/Firefox/Profiles"
-TEST_PROFILE="${TEST_PROFILE}/tabnesia"
+FIREFOX_DIR="${HOME}/Library/Application Support/Firefox"
+TEST_PROFILE="${FIREFOX_DIR}/Profiles/tabnesia"
 
 npx --yes web-ext run \
   --firefox /opt/homebrew/bin/firefox \
