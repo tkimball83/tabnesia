@@ -45,6 +45,7 @@ async function restore() {
   render(current.urls);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
+  status.textContent = '';
 }
 
 form.addEventListener('submit', async (event) => {
@@ -165,4 +166,6 @@ document.addEventListener('visibilitychange', () => {
 
 restore().catch((error) => {
   status.textContent = error.message;
+}).finally(() => {
+  form.inert = false;
 });

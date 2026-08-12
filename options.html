@@ -12,7 +12,7 @@
       <h1>Tabnesia</h1>
       <p>These URLs are pinned in this order in every Firefox window.</p>
 
-      <form id="settings">
+      <form id="settings" inert>
         <ol id="pins" aria-label="Pinned URLs"></ol>
         <button id="add" type="button">Add URL</button>
 
@@ -33,7 +33,7 @@
           <label class="button" for="import">Import backup</label>
         </div>
       </form>
-      <p id="status" role="status" aria-live="polite"></p>
+      <p id="status" role="status" aria-live="polite">Loading…</p>
     </main>
 
     <template id="row-template">

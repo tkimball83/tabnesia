@@ -41,10 +41,10 @@ This command continues only when they resolve to one profile:
 
 ```sh
 FIREFOX_HOME="${HOME}/Library/Application Support/Firefox"
-PROFILE_PATH=$(awk -F= \
+PROFILE_PATH=$(awk \
   '/^\[Install/ { active = 1; next }
    /^\[/ { active = 0 }
-   active && /^Default=/ { print $2 }' \
+   active && /^Default=/ { sub(/^Default=/, ""); print }' \
   "${FIREFOX_HOME}/profiles.ini" | sort -u)
 PROFILE_COUNT=$(printf '%s\n' "${PROFILE_PATH}" | awk \
   'NF { count++ } END { print count }')
@@ -55,7 +55,10 @@ if test "${PROFILE_COUNT}" -ne 1; then
   exit 1
 fi
 
-SOURCE="${FIREFOX_HOME}/${PROFILE_PATH}"
+case "${PROFILE_PATH}" in
+  /*) SOURCE="${PROFILE_PATH}" ;;
+  *) SOURCE="${FIREFOX_HOME}/${PROFILE_PATH}" ;;
+esac
 
 printf 'Default profile: %s\n' "${SOURCE}"
 ```

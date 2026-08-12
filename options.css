@@ -33,7 +33,7 @@ form[inert] {
 }
 
 .url {
-  min-width: 10rem;
+  min-width: 0;
   padding: .45rem;
 }
 

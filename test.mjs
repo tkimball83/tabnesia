@@ -17,6 +17,8 @@ test('normalizes and validates configured URLs', () => {
     'http://example.net/path',
   ]);
   assert.throws(() => normalizeUrls(['ftp://example.com']), /http:\/\//);
+  assert.throws(() => normalizeUrls([42]), /valid URL/);
+  assert.throws(() => normalizeUrls(['not a URL']), /valid URL/);
   assert.throws(
     () => normalizeUrls(['https://example.com', 'https://example.com/']),
     /duplicates/,
@@ -32,6 +34,11 @@ test('validates backups', () => {
   });
   assert.throws(
     () => parseBackup('{"version":2,"urls":[],"privateWindows":false}'),
+    /version 1/,
+  );
+  assert.throws(() => parseBackup('{'), /valid JSON/);
+  assert.throws(
+    () => parseBackup('{"version":1,"urls":"bad","privateWindows":false}'),
     /version 1/,
   );
 });
@@ -103,6 +110,32 @@ test('reports the Firefox sync item limit before saving', async () => {
     }),
     /8 KB/,
   );
+});
+
+test('keeps a successful save when legacy cleanup fails', async () => {
+  const writes = [];
+  const storage = {
+    sync: {
+      set: async (value) => writes.push(value),
+      remove: async () => { throw new Error('Cleanup failed'); },
+    },
+    local: {
+      remove: async () => { throw new Error('Cleanup failed'); },
+    },
+  };
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...values) => warnings.push(values);
+  try {
+    await saveSettings(storage, {
+      urls: ['https://example.com'],
+      privateWindows: false,
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(writes.length, 1);
+  assert.equal(warnings.length, 2);
 });
 
 test('uses local settings when sync migration fails', async () => {
