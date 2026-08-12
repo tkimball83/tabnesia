@@ -12,6 +12,7 @@ function event() {
 }
 
 async function setup({
+  bootstrapFailures = 0,
   initialTabs = [{
     id: 1,
     windowId: 10,
@@ -53,6 +54,7 @@ async function setup({
   let failedUpdateId;
   let sessionReads = 0;
   let syncReads = 0;
+  let bootstrapReads = 0;
   const sessionStorage = {};
 
   globalThis.browser = {
@@ -99,7 +101,14 @@ async function setup({
         },
       },
       session: {
-        get: async (key) => ({ [key]: sessionStorage[key] }),
+        get: async (key) => {
+          bootstrapReads += 1;
+          if (bootstrapFailures > 0) {
+            bootstrapFailures -= 1;
+            throw new Error('Bootstrap read failed');
+          }
+          return { [key]: sessionStorage[key] };
+        },
         set: async (value) => Object.assign(sessionStorage, value),
       },
       onChanged: events.storage,
@@ -176,6 +185,7 @@ async function setup({
   calls.length = 0;
   sessionReads = 0;
   syncReads = 0;
+  bootstrapReads = 0;
 
   return {
     bootCalls,
@@ -183,6 +193,7 @@ async function setup({
     events,
     markers,
     tabs,
+    bootstrapReads: () => bootstrapReads,
     failMarker() {
       failNextMarker = true;
     },
@@ -219,11 +230,29 @@ test('background behavior', async (t) => {
     ]]);
   });
 
+  await t.test('bootstrap retries after a transient failure', async () => {
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      const state = await setup({ bootstrapFailures: 1, initialTabs: [] });
+      assert.equal(state.tabs.length, 1);
+      assert.equal(state.markers.get(1), '0');
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   await t.test('missing sync data preserves managed tabs', async () => {
     const state = await setup({ missingSettings: true });
     assert.deepEqual(state.bootCalls, []);
     assert.equal(state.tabs[0].pinned, true);
     assert.equal(state.markers.get(1), '0');
+
+    await state.events.removed.listener(99, {
+      windowId: 10,
+      isWindowClosing: false,
+    });
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
   });
 
   await t.test('private pins require the setting and permission', async () => {
@@ -263,9 +292,15 @@ test('background behavior', async (t) => {
     assert.equal(state.markers.has(1), false);
   });
 
-  await t.test('startup does not reload managed tabs', async () => {
-    const { calls } = await setup();
-    assert.deepEqual(calls, []);
+  await t.test('startup does not rescan or reload managed tabs', async () => {
+    const state = await setup();
+    await Promise.all([
+      state.events.startup.listener(),
+      state.events.installed.listener(),
+    ]);
+    assert.equal(state.bootstrapReads(), 0);
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
+    assert.deepEqual(state.calls, []);
   });
 
   await t.test('managed pins are restored to configured order', async () => {

@@ -12,6 +12,10 @@ main {
   padding: 0 1rem;
 }
 
+form[inert] {
+  opacity: .7;
+}
+
 #pins {
   padding: 0;
   list-style: none;
@@ -29,7 +33,7 @@ main {
 }
 
 .url {
-  min-width: 10rem;
+  min-width: 0;
   padding: .45rem;
 }
 
