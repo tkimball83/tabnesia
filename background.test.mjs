@@ -224,6 +224,12 @@ test('background behavior', async (t) => {
     assert.deepEqual(state.bootCalls, []);
     assert.equal(state.tabs[0].pinned, true);
     assert.equal(state.markers.get(1), '0');
+
+    await state.events.removed.listener(99, {
+      windowId: 10,
+      isWindowClosing: false,
+    });
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
   });
 
   await t.test('private pins require the setting and permission', async () => {

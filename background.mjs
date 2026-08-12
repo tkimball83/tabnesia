@@ -22,7 +22,10 @@ async function reconcileWindow(windowId, resetUrls = false) {
   }
   if (window.type !== 'normal') return;
   const current = await findSettings(browser.storage);
-  if (!current) return;
+  if (!current) {
+    initializedWindows.add(windowId);
+    return;
+  }
   const privateAllowed = !window.incognito
     || await browser.extension.isAllowedIncognitoAccess();
   const shouldManage = !window.incognito
