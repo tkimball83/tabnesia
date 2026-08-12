@@ -1,4 +1,4 @@
-# Tabnesia
+# tabnesia
 
 Tabnesia maintains a fixed, ordered list of native Firefox pinned tabs.
 Managed pins return to their configured URLs when activated and are restored
