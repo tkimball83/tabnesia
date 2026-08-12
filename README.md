@@ -36,31 +36,12 @@ profile into a dedicated test profile.
 
 #### Find the default profile
 
-On macOS, Firefox records installation default profiles in `profiles.ini`.
-This command continues only when they resolve to one profile:
+On macOS, find the default release profile:
 
 ```sh
-FIREFOX_DIR="${HOME}/Library/Application Support/Firefox"
-SOURCE_PROFILE=$(awk \
-  '/^\[Install/ { active = 1; next }
-   /^\[/ { active = 0 }
-   active && /^Default=/ { sub(/^Default=/, ""); print }' \
-  "${FIREFOX_DIR}/profiles.ini" | sort -u)
-PROFILE_COUNT=$(printf '%s\n' "${SOURCE_PROFILE}" | awk \
-  'NF { count++ } END { print count }')
-
-if test "${PROFILE_COUNT}" -ne 1; then
-  echo "Could not identify one Firefox installation profile"
-  echo "Choose the correct Default= entry from profiles.ini"
-  exit 1
-fi
-
-case "${SOURCE_PROFILE}" in
-  /*) ;;
-  *) SOURCE_PROFILE="${FIREFOX_DIR}/${SOURCE_PROFILE}" ;;
-esac
-
-printf 'Default profile: %s\n' "${SOURCE_PROFILE}"
+PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
+SOURCE_PROFILE=$(find "${PROFILES_DIR}" -maxdepth 1 \
+  -type d -name '*.default-release*' -print -quit)
 ```
 
 #### Create the test profile
@@ -68,26 +49,15 @@ printf 'Default profile: %s\n' "${SOURCE_PROFILE}"
 Quit Firefox before copying. Create the clone once:
 
 ```sh
-TEST_PROFILE="${FIREFOX_DIR}/Profiles/tabnesia"
-
-if ! test -f "${SOURCE_PROFILE}/prefs.js"; then
-  echo "Default Firefox profile not found"
-  exit 1
-fi
-
-if test -e "${TEST_PROFILE}"; then
-  echo "Test profile already exists; skip this copy step"
-  exit 1
-fi
-
+TEST_PROFILE="${PROFILES_DIR}/tabnesia"
 ditto "${SOURCE_PROFILE}" "${TEST_PROFILE}"
 ```
 
 Reuse the clone on later runs:
 
 ```sh
-FIREFOX_DIR="${HOME}/Library/Application Support/Firefox"
-TEST_PROFILE="${FIREFOX_DIR}/Profiles/tabnesia"
+PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
+TEST_PROFILE="${PROFILES_DIR}/tabnesia"
 
 npx --yes web-ext run \
   --firefox /opt/homebrew/bin/firefox \
