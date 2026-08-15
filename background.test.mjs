@@ -61,6 +61,7 @@ async function setup({
     extension: {
       isAllowedIncognitoAccess: async () => incognitoAllowed,
     },
+    i18n: { getMessage: (key) => key },
     runtime: {
       onInstalled: events.installed,
       onStartup: events.startup,

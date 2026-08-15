@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { getMessage } from './i18n-mock.mjs';
 import {
   findSettings,
   loadSettings,
@@ -9,6 +10,8 @@ import {
   partitionSlots,
   saveSettings,
 } from './config.mjs';
+
+globalThis.browser = { i18n: { getMessage } };
 
 test('normalizes and validates configured URLs', () => {
   const input = [' https://example.com ', 'http://example.net/path'];
