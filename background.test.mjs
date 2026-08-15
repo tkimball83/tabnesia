@@ -84,10 +84,6 @@ async function setup({
       },
     },
     storage: {
-      local: {
-        get: async () => ({}),
-        remove: async () => {},
-      },
       sync: {
         get: async () => {
           syncReads += 1;
@@ -95,9 +91,6 @@ async function setup({
         },
         set: async (value) => {
           stored = { ...stored, ...value };
-        },
-        remove: async (keys) => {
-          keys.forEach((key) => delete stored[key]);
         },
       },
       session: {
