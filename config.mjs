@@ -1,7 +1,6 @@
 const DEFAULT_SETTINGS = { urls: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
 const SETTINGS_KEY = 'settings';
-const LEGACY_KEYS = ['urls', 'privateWindows'];
 
 export function normalizeUrls(values) {
   const seen = new Set();
@@ -51,50 +50,15 @@ export async function saveSettings(storage, value) {
     throw new Error('Pinned URLs exceed Firefox sync\'s 8 KB item limit.');
   }
   await storage.sync.set({ [SETTINGS_KEY]: current });
-  const cleanup = await Promise.allSettled([
-    storage.sync.remove(LEGACY_KEYS),
-    storage.local.remove(LEGACY_KEYS),
-  ]);
-  for (const result of cleanup) {
-    if (result.status === 'rejected') {
-      console.warn('Could not remove old settings.', result.reason);
-    }
-  }
-  return current;
-}
-
-async function migrateSettings(storage, current) {
-  try {
-    await saveSettings(storage, current);
-  } catch (error) {
-    console.warn('Could not migrate tabnesia settings to sync.', error);
-  }
   return current;
 }
 
 export async function findSettings(storage) {
-  const synced = await storage.sync.get();
+  const synced = await storage.sync.get(SETTINGS_KEY);
   if (Object.hasOwn(synced, SETTINGS_KEY)) {
     return parseSettings(synced[SETTINGS_KEY]);
   }
-  if (
-    Object.hasOwn(synced, 'urls')
-    || Object.hasOwn(synced, 'privateWindows')
-  ) {
-    const current = parseSettings({ ...DEFAULT_SETTINGS, ...synced });
-    return migrateSettings(storage, current);
-  }
-
-  const local = await storage.local.get();
-  if (
-    !Object.hasOwn(local, 'urls')
-    && !Object.hasOwn(local, 'privateWindows')
-  ) {
-    return null;
-  }
-
-  const current = parseSettings({ ...DEFAULT_SETTINGS, ...local });
-  return migrateSettings(storage, current);
+  return null;
 }
 
 export async function loadSettings(storage) {
@@ -120,14 +84,18 @@ export function parseBackup(text) {
   }
 }
 
+export function parseSlot(marker) {
+  return typeof marker === 'string' && /^\d+$/.test(marker)
+    ? Number(marker)
+    : -1;
+}
+
 export function partitionSlots(taggedTabs, count) {
   const slots = Array(count);
   const extras = [];
 
   for (const { tab, slot } of taggedTabs) {
-    const index = typeof slot === 'string' && /^\d+$/.test(slot)
-      ? Number(slot)
-      : -1;
+    const index = parseSlot(slot);
     if (index >= 0 && index < count && slots[index] === undefined) {
       slots[index] = tab;
     } else if (slot !== undefined) {

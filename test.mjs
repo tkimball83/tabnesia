@@ -46,46 +46,12 @@ test('validates backups', () => {
 test('distinguishes missing settings from an empty list', async () => {
   const storage = {
     sync: { get: async () => ({}) },
-    local: { get: async () => ({}) },
   };
   assert.equal(await findSettings(storage), null);
   assert.deepEqual(await loadSettings(storage), {
     urls: [],
     privateWindows: false,
   });
-});
-
-test('reads synced settings and migrates existing local settings', async () => {
-  const writes = [];
-  const localRemovals = [];
-  const syncRemovals = [];
-  const storage = {
-    sync: {
-      get: async () => ({}),
-      set: async (value) => writes.push(value),
-      remove: async (keys) => syncRemovals.push(keys),
-    },
-    local: {
-      get: async () => ({
-        urls: ['https://example.com'],
-        privateWindows: true,
-      }),
-      remove: async (keys) => localRemovals.push(keys),
-    },
-  };
-
-  assert.deepEqual(await loadSettings(storage), {
-    urls: ['https://example.com/'],
-    privateWindows: true,
-  });
-  assert.deepEqual(writes, [{
-    settings: {
-      urls: ['https://example.com/'],
-      privateWindows: true,
-    },
-  }]);
-  assert.deepEqual(syncRemovals, [['urls', 'privateWindows']]);
-  assert.deepEqual(localRemovals, [['urls', 'privateWindows']]);
 
   storage.sync.get = async () => ({
     settings: {
@@ -110,88 +76,6 @@ test('reports the Firefox sync item limit before saving', async () => {
     }),
     /8 KB/,
   );
-});
-
-test('keeps a successful save when legacy cleanup fails', async () => {
-  const writes = [];
-  const storage = {
-    sync: {
-      set: async (value) => writes.push(value),
-      remove: async () => { throw new Error('Cleanup failed'); },
-    },
-    local: {
-      remove: async () => { throw new Error('Cleanup failed'); },
-    },
-  };
-  const originalWarn = console.warn;
-  const warnings = [];
-  console.warn = (...values) => warnings.push(values);
-  try {
-    await saveSettings(storage, {
-      urls: ['https://example.com'],
-      privateWindows: false,
-    });
-  } finally {
-    console.warn = originalWarn;
-  }
-  assert.equal(writes.length, 1);
-  assert.equal(warnings.length, 2);
-});
-
-test('uses local settings when sync migration fails', async () => {
-  let removed = false;
-  const storage = {
-    sync: {
-      get: async () => ({}),
-      set: async () => { throw new Error('Sync unavailable'); },
-    },
-    local: {
-      get: async () => ({
-        urls: ['https://example.com'],
-        privateWindows: false,
-      }),
-      remove: async () => { removed = true; },
-    },
-  };
-  const originalWarn = console.warn;
-  console.warn = () => {};
-  try {
-    assert.deepEqual(await findSettings(storage), {
-      urls: ['https://example.com/'],
-      privateWindows: false,
-    });
-  } finally {
-    console.warn = originalWarn;
-  }
-  assert.equal(removed, false);
-});
-
-test('migrates legacy synced settings into one item', async () => {
-  const writes = [];
-  const storage = {
-    sync: {
-      get: async () => ({
-        urls: ['https://example.com'],
-        privateWindows: true,
-      }),
-      set: async (value) => writes.push(value),
-      remove: async () => {},
-    },
-    local: {
-      get: async () => assert.fail('unexpected local read'),
-      remove: async () => {},
-    },
-  };
-  assert.deepEqual(await findSettings(storage), {
-    urls: ['https://example.com/'],
-    privateWindows: true,
-  });
-  assert.deepEqual(writes, [{
-    settings: {
-      urls: ['https://example.com/'],
-      privateWindows: true,
-    },
-  }]);
 });
 
 test('rejects malformed stored settings', () => {
