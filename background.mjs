@@ -1,4 +1,4 @@
-import { findSettings, partitionSlots } from './config.mjs';
+import { findSettings, parseSlot, partitionSlots } from './config.mjs';
 
 const SLOT_KEY = 'tabnesiaSlot';
 const BOOTSTRAP_KEY = 'tabnesiaBootstrapped';
@@ -125,9 +125,7 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
     const tab = await browser.tabs.get(tabId);
     if (!tab.pinned) return;
     const marker = await browser.sessions.getTabValue(tabId, SLOT_KEY);
-    const slot = typeof marker === 'string' && /^\d+$/.test(marker)
-      ? Number(marker)
-      : -1;
+    const slot = parseSlot(marker);
     if (slot < 0) return;
     const current = await findSettings(browser.storage);
     if (!current?.urls[slot]) return;
@@ -198,23 +196,18 @@ function changed(change) {
 }
 
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync') {
-    const settingsChanged = changes.settings;
-    const urlsChanged = settingsChanged
-      ? changed({
-        oldValue: settingsChanged.oldValue?.urls,
-        newValue: settingsChanged.newValue?.urls,
-      })
-      : changed(changes.urls);
-    const privateChanged = settingsChanged
-      ? changed({
-        oldValue: settingsChanged.oldValue?.privateWindows,
-        newValue: settingsChanged.newValue?.privateWindows,
-      })
-      : changed(changes.privateWindows);
-    if (urlsChanged || privateChanged) {
-      return reconcileAll(urlsChanged).catch(console.error);
-    }
+  if (area !== 'sync' || !changes.settings) return undefined;
+  const { oldValue, newValue } = changes.settings;
+  const urlsChanged = changed({
+    oldValue: oldValue?.urls,
+    newValue: newValue?.urls,
+  });
+  const privateChanged = changed({
+    oldValue: oldValue?.privateWindows,
+    newValue: newValue?.privateWindows,
+  });
+  if (urlsChanged || privateChanged) {
+    return reconcileAll(urlsChanged).catch(console.error);
   }
   return undefined;
 });

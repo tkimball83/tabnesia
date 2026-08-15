@@ -1,4 +1,9 @@
-import { loadSettings, parseBackup, saveSettings } from './config.mjs';
+import {
+  loadSettings,
+  parseBackup,
+  parseSettings,
+  saveSettings,
+} from './config.mjs';
 
 const form = document.querySelector('#settings');
 const list = document.querySelector('#pins');
@@ -6,8 +11,19 @@ const template = document.querySelector('#row-template');
 const privateWindows = document.querySelector('#private-windows');
 const privateHelp = document.querySelector('#private-help');
 const status = document.querySelector('#status');
+const externalWarning = document.querySelector('#external-change');
 let dragged;
 let draggedFrom;
+let dropped;
+let lastSaved;
+let changeEpoch = 0;
+let queue = Promise.resolve();
+
+function enqueue(task) {
+  const result = queue.then(task);
+  queue = result.catch(() => {});
+  return result;
+}
 
 function updateButtons() {
   const rows = [...list.children];
@@ -48,22 +64,30 @@ async function restore() {
   status.textContent = '';
 }
 
-form.addEventListener('submit', async (event) => {
+form.addEventListener('submit', (event) => {
   event.preventDefault();
-  status.textContent = 'Saving…';
-  form.inert = true;
-  try {
-    const current = await saveSettings(browser.storage, {
-      urls: [...list.querySelectorAll('.url')].map((input) => input.value),
-      privateWindows: privateWindows.checked,
-    });
-    render(current.urls);
-    status.textContent = 'Saved';
-  } catch (error) {
-    status.textContent = error.message;
-  } finally {
-    form.inert = false;
-  }
+  const epoch = changeEpoch;
+  return enqueue(async () => {
+    status.textContent = 'Saving…';
+    form.inert = true;
+    const previousSaved = lastSaved;
+    try {
+      const current = parseSettings({
+        urls: [...list.querySelectorAll('.url')].map((input) => input.value),
+        privateWindows: privateWindows.checked,
+      });
+      lastSaved = JSON.stringify(current);
+      await saveSettings(browser.storage, current);
+      render(current.urls);
+      status.textContent = 'Saved';
+      if (changeEpoch === epoch) externalWarning.hidden = true;
+    } catch (error) {
+      lastSaved = previousSaved;
+      status.textContent = error.message;
+    } finally {
+      form.inert = false;
+    }
+  });
 });
 
 form.addEventListener('input', changed);
@@ -78,7 +102,12 @@ list.addEventListener('click', (event) => {
   if (!action) return;
   const row = event.target.closest('.pin');
   if (!row) return;
-  if (action.matches('.remove')) row.remove();
+  if (action.matches('.remove')) {
+    const neighbor = row.nextElementSibling ?? row.previousElementSibling;
+    row.remove();
+    (neighbor?.querySelector('.remove') ?? document.querySelector('#add'))
+      .focus();
+  }
   if (action.matches('.up') && row.previousElementSibling) {
     list.insertBefore(row, row.previousElementSibling);
   }
@@ -86,12 +115,20 @@ list.addEventListener('click', (event) => {
     row.nextElementSibling.after(row);
   }
   updateButtons();
+  if (action.isConnected) {
+    (action.disabled
+      ? row.querySelector(action.matches('.up') ? '.down' : '.up')
+      : action
+    ).focus();
+  }
   changed();
 });
 
 list.addEventListener('dragstart', (event) => {
+  if (!event.target.closest('.drag')) return;
   dragged = event.target.closest('.pin');
   draggedFrom = [...list.children].indexOf(dragged);
+  dropped = false;
   dragged.classList.add('dragging');
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', '');
@@ -107,9 +144,18 @@ list.addEventListener('dragover', (event) => {
   list.insertBefore(dragged, after ? row.nextElementSibling : row);
 });
 
-list.addEventListener('drop', (event) => event.preventDefault());
+list.addEventListener('drop', (event) => {
+  if (!dragged) return;
+  dropped = true;
+  event.preventDefault();
+});
 list.addEventListener('dragend', () => {
-  dragged?.classList.remove('dragging');
+  if (!dragged) return;
+  dragged.classList.remove('dragging');
+  if (!dropped) {
+    const rows = [...list.children].filter((row) => row !== dragged);
+    list.insertBefore(dragged, rows[draggedFrom] ?? null);
+  }
   const moved = draggedFrom !== [...list.children].indexOf(dragged);
   dragged = undefined;
   draggedFrom = undefined;
@@ -117,47 +163,64 @@ list.addEventListener('dragend', () => {
   if (moved) changed();
 });
 
-document.querySelector('#export').addEventListener('click', async () => {
-  status.textContent = 'Exporting…';
-  form.inert = true;
-  try {
-    const current = await loadSettings(browser.storage);
-    const blob = new Blob(
-      [JSON.stringify({ version: 1, ...current }, null, 2)],
-      { type: 'application/json' },
-    );
-    const href = URL.createObjectURL(blob);
-    const link = Object.assign(document.createElement('a'), {
-      href,
-      download: 'tabnesia-pins.json',
-    });
-    link.click();
-    URL.revokeObjectURL(href);
-    status.textContent = 'Backup exported';
-  } catch (error) {
-    status.textContent = error.message;
-  } finally {
-    form.inert = false;
-  }
+document.querySelector('#export').addEventListener('click', () => (
+  enqueue(async () => {
+    status.textContent = 'Exporting…';
+    form.inert = true;
+    try {
+      const current = await loadSettings(browser.storage);
+      const blob = new Blob(
+        [JSON.stringify({ version: 1, ...current }, null, 2)],
+        { type: 'application/json' },
+      );
+      const href = URL.createObjectURL(blob);
+      const link = Object.assign(document.createElement('a'), {
+        href,
+        download: 'tabnesia-pins.json',
+      });
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(href), 0);
+      status.textContent = 'Backup exported';
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      form.inert = false;
+    }
+  })
+));
+
+document.querySelector('#import').addEventListener('change', (event) => {
+  const [file] = event.target.files;
+  if (!file) return undefined;
+  const epoch = changeEpoch;
+  return enqueue(async () => {
+    status.textContent = 'Importing…';
+    form.inert = true;
+    const previousSaved = lastSaved;
+    try {
+      const imported = parseBackup(await file.text());
+      lastSaved = JSON.stringify(imported);
+      await saveSettings(browser.storage, imported);
+      render(imported.urls);
+      privateWindows.checked = imported.privateWindows;
+      status.textContent = 'Backup imported and saved';
+      if (changeEpoch === epoch) externalWarning.hidden = true;
+    } catch (error) {
+      lastSaved = previousSaved;
+      status.textContent = error.message;
+    } finally {
+      event.target.value = '';
+      form.inert = false;
+    }
+  });
 });
 
-document.querySelector('#import').addEventListener('change', async (event) => {
-  const [file] = event.target.files;
-  if (!file) return;
-  status.textContent = 'Importing…';
-  form.inert = true;
-  try {
-    const imported = parseBackup(await file.text());
-    await saveSettings(browser.storage, imported);
-    render(imported.urls);
-    privateWindows.checked = imported.privateWindows;
-    status.textContent = 'Backup imported and saved';
-  } catch (error) {
-    status.textContent = error.message;
-  } finally {
-    event.target.value = '';
-    form.inert = false;
-  }
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'sync' || !changes.settings) return;
+  if (lastSaved !== undefined
+      && JSON.stringify(changes.settings.newValue) === lastSaved) return;
+  changeEpoch += 1;
+  externalWarning.hidden = false;
 });
 
 document.addEventListener('visibilitychange', () => {
