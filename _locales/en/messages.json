@@ -1,0 +1,62 @@
+{
+  "extensionName": { "message": "Tabnesia" },
+  "extensionDescription": {
+    "message": "Keeps pinned tabs ordered and resets URLs when activated."
+  },
+  "optionsTitle": { "message": "Tabnesia settings" },
+  "intro": {
+    "message": "These URLs are pinned in this order in every Firefox window."
+  },
+  "pinnedUrls": { "message": "Pinned URLs" },
+  "addUrl": { "message": "Add URL" },
+  "privateLabel": { "message": "Enable pins in Private Windows" },
+  "privateHelp": {
+    "message": "First enable “Run in Private Windows” for tabnesia in Firefox’s Add-ons Manager, then reopen this page."
+  },
+  "pinLimitWarning": {
+    "message": "More than 15 pinned tabs can slow Firefox down."
+  },
+  "save": { "message": "Save" },
+  "exportBackup": { "message": "Export backup" },
+  "importBackup": { "message": "Import backup" },
+  "statusLoading": { "message": "Loading…" },
+  "externalChangeWarning": {
+    "message": "Settings changed elsewhere — reload this page before saving."
+  },
+  "dragToReorder": { "message": "Drag to reorder" },
+  "pinnedUrl": { "message": "Pinned URL" },
+  "moveUp": { "message": "Move up" },
+  "moveDown": { "message": "Move down" },
+  "removeUrl": { "message": "Remove URL" },
+  "remove": { "message": "Remove" },
+  "statusUnsaved": { "message": "Unsaved changes" },
+  "statusSaving": { "message": "Saving…" },
+  "statusSaved": { "message": "Saved" },
+  "statusExporting": { "message": "Exporting…" },
+  "statusExported": { "message": "Backup exported" },
+  "statusImporting": { "message": "Importing…" },
+  "statusImported": { "message": "Backup imported and saved" },
+  "errorInvalidUrl": {
+    "message": "Row $row$ is not a valid URL.",
+    "placeholders": { "row": { "content": "$1" } }
+  },
+  "errorScheme": {
+    "message": "Row $row$ must use http:// or https://.",
+    "placeholders": { "row": { "content": "$1" } }
+  },
+  "errorDuplicate": {
+    "message": "Row $row$ duplicates $url$.",
+    "placeholders": {
+      "row": { "content": "$1" },
+      "url": { "content": "$2" }
+    }
+  },
+  "errorInvalidSettings": { "message": "Invalid tabnesia settings." },
+  "errorSyncLimit": {
+    "message": "Pinned URLs exceed Firefox sync's 8 KB item limit."
+  },
+  "errorInvalidJson": { "message": "The selected file is not valid JSON." },
+  "errorInvalidBackup": {
+    "message": "The selected file is not a tabnesia version 1 backup."
+  }
+}

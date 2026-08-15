@@ -4,7 +4,8 @@ Tabnesia maintains a fixed, ordered list of native Firefox pinned tabs.
 Managed pins return to their configured URLs when activated and are restored
 when closed, unpinned, or moved.
 
-- Firefox 148 or newer
+- Firefox 142 or newer (the floor for `data_collection_permissions` on all
+  Firefox platforms)
 - No runtime dependencies
 - No data collected by tabnesia
 

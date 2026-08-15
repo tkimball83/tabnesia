@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { getMessage } from './i18n-mock.mjs';
 
 let moduleNumber = 0;
 let focused;
@@ -127,16 +129,22 @@ async function setup({ urls } = {}) {
   focused = undefined;
   const ids = Object.fromEntries([
     'settings', 'pins', 'private-windows', 'private-help',
-    'status', 'external-change', 'add', 'export', 'import',
+    'status', 'external-change', 'pin-limit', 'add', 'export', 'import',
   ].map((id) => [id, makeEl()]));
   ids['external-change'].hidden = true;
+  ids['pin-limit'].hidden = true;
   ids.pins.isRoot = true;
   ids['row-template'] = {
-    content: { firstElementChild: { cloneNode: () => makeRow() } },
+    content: {
+      firstElementChild: { cloneNode: () => makeRow() },
+      querySelectorAll: () => [],
+    },
   };
 
   globalThis.document = {
+    documentElement: {},
     querySelector: (selector) => ids[selector.slice(1)],
+    querySelectorAll: () => [],
     addEventListener() {},
     createElement: () => ({ click() {} }),
   };
@@ -146,6 +154,7 @@ async function setup({ urls } = {}) {
   let storageListener;
   globalThis.browser = {
     extension: { isAllowedIncognitoAccess: async () => true },
+    i18n: { getMessage, getUILanguage: () => 'en-US' },
     storage: {
       sync: {
         get: async () => (
@@ -173,6 +182,7 @@ async function setup({ urls } = {}) {
     list,
     status: ids.status,
     warning: ids['external-change'],
+    pinLimit: ids['pin-limit'],
     add: ids.add,
     row: (index) => list.children[index],
     urls: () => list.children.map((row) => row.querySelector('.url').value),
@@ -226,6 +236,19 @@ const THREE = [
 const FOREIGN = { urls: ['https://example.net/'], privateWindows: true };
 const OWN = { urls: [], privateWindows: false };
 
+test('static i18n keys resolve to messages', () => {
+  const read = (name) => readFileSync(new URL(name, import.meta.url), 'utf8');
+  const keys = [
+    ...read('./options.html').matchAll(/data-i18n="([^"]+)"/g),
+    ...read('./options.html').matchAll(/data-i18n-attr="[^=]+=([^"]+)"/g),
+    ...read('./manifest.json').matchAll(/__MSG_(\w+)__/g),
+    ...read('./options.mjs').matchAll(/\bt\('([^']+)'/g),
+    ...read('./config.mjs').matchAll(/\bt\('([^']+)'/g),
+  ].map((match) => match[1]);
+  assert.ok(keys.length >= 30);
+  for (const key of keys) assert.equal(typeof getMessage(key), 'string');
+});
+
 test('options page rows and reordering', async (t) => {
   await t.test('rows render with boundary buttons disabled', async () => {
     const state = await setup({ urls: THREE });
@@ -260,6 +283,17 @@ test('options page rows and reordering', async (t) => {
     await state.click(state.row(0).querySelector('.remove'));
     assert.deepEqual(state.urls(), []);
     assert.equal(state.focused(), state.add);
+  });
+
+  await t.test('a soft warning appears past 15 pins', async () => {
+    const many = Array.from(
+      { length: 16 },
+      (_, index) => `https://site${index}.example/`,
+    );
+    const state = await setup({ urls: many });
+    assert.equal(state.pinLimit.hidden, false);
+    await state.click(state.row(0).querySelector('.remove'));
+    assert.equal(state.pinLimit.hidden, true);
   });
 
   await t.test('handle drags reorder and mark unsaved changes', async () => {

@@ -4,37 +4,49 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <title>Tabnesia settings</title>
+    <title data-i18n="optionsTitle">Tabnesia settings</title>
     <link rel="stylesheet" href="options.css">
   </head>
   <body>
     <main>
-      <h1>Tabnesia</h1>
-      <p>These URLs are pinned in this order in every Firefox window.</p>
+      <h1 data-i18n="extensionName">Tabnesia</h1>
+      <p data-i18n="intro">
+        These URLs are pinned in this order in every Firefox window.
+      </p>
 
       <form id="settings" inert>
-        <ol id="pins" role="list" aria-label="Pinned URLs"></ol>
-        <button id="add" type="button">Add URL</button>
+        <ol id="pins" role="list" aria-label="Pinned URLs"
+          data-i18n-attr="aria-label=pinnedUrls"></ol>
+        <button id="add" type="button" data-i18n="addUrl">Add URL</button>
+        <p id="pin-limit" class="help" data-i18n="pinLimitWarning" hidden>
+          More than 15 pinned tabs can slow Firefox down.
+        </p>
 
         <label class="private-setting">
           <input id="private-windows" type="checkbox">
-          Enable pins in Private Windows
+          <span data-i18n="privateLabel">Enable pins in Private Windows</span>
         </label>
-        <p id="private-help" class="help" hidden>
+        <p id="private-help" class="help" data-i18n="privateHelp" hidden>
           First enable “Run in Private Windows” for tabnesia in Firefox’s
           Add-ons Manager, then reopen this page.
         </p>
 
         <div class="actions">
-          <button type="submit">Save</button>
-          <button id="export" type="button">Export backup</button>
+          <button type="submit" data-i18n="save">Save</button>
+          <button id="export" type="button" data-i18n="exportBackup">
+            Export backup
+          </button>
           <input id="import" class="visually-hidden" type="file"
             accept="application/json,.json">
-          <label class="button" for="import">Import backup</label>
+          <label class="button" for="import" data-i18n="importBackup">
+            Import backup
+          </label>
         </div>
       </form>
-      <p id="status" role="status" aria-live="polite">Loading…</p>
-      <p id="external-change" class="help" role="status" hidden>
+      <p id="status" role="status" aria-live="polite"
+        data-i18n="statusLoading">Loading…</p>
+      <p id="external-change" class="help" role="status"
+        data-i18n="externalChangeWarning" hidden>
         Settings changed elsewhere — reload this page before saving.
       </p>
     </main>
@@ -42,13 +54,16 @@
     <template id="row-template">
       <li class="pin">
         <span class="drag" draggable="true" title="Drag to reorder"
-          aria-hidden="true">⠿</span>
+          data-i18n-attr="title=dragToReorder" aria-hidden="true">⠿</span>
         <input class="url" type="url" inputmode="url"
           placeholder="https://example.com/" aria-label="Pinned URL"
-          required spellcheck="false">
-        <button class="up" type="button" aria-label="Move up">↑</button>
-        <button class="down" type="button" aria-label="Move down">↓</button>
-        <button class="remove" type="button" aria-label="Remove URL">
+          data-i18n-attr="aria-label=pinnedUrl" required spellcheck="false">
+        <button class="up" type="button" aria-label="Move up"
+          data-i18n-attr="aria-label=moveUp">↑</button>
+        <button class="down" type="button" aria-label="Move down"
+          data-i18n-attr="aria-label=moveDown">↓</button>
+        <button class="remove" type="button" aria-label="Remove URL"
+          data-i18n="remove" data-i18n-attr="aria-label=removeUrl">
           Remove
         </button>
       </li>
