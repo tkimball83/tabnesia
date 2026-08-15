@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Tabnesia",
+  "name": "__MSG_extensionName__",
   "version": "1.0.1",
-  "description": "Keeps pinned tabs ordered and resets URLs when activated.",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+  "homepage_url": "https://github.com/tkimball83/tabnesia",
   "icons": {
     "16": "icons/tabnesia.svg",
     "32": "icons/tabnesia.svg",
@@ -22,7 +24,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "tabnesia@tkimball83.github.io",
-      "strict_min_version": "148.0",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"]
       }

@@ -2,25 +2,27 @@ const DEFAULT_SETTINGS = { urls: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
 const SETTINGS_KEY = 'settings';
 
+const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
+
 export function normalizeUrls(values) {
   const seen = new Set();
 
   return values.map((value, index) => {
     if (typeof value !== 'string') {
-      throw new Error(`Row ${index + 1} is not a valid URL.`);
+      throw new Error(t('errorInvalidUrl', String(index + 1)));
     }
     let url;
     try {
       url = new URL(value.trim());
     } catch {
-      throw new Error(`Row ${index + 1} is not a valid URL.`);
+      throw new Error(t('errorInvalidUrl', String(index + 1)));
     }
 
     if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new Error(`Row ${index + 1} must use http:// or https://.`);
+      throw new Error(t('errorScheme', String(index + 1)));
     }
     if (seen.has(url.href)) {
-      throw new Error(`Row ${index + 1} duplicates ${url.href}.`);
+      throw new Error(t('errorDuplicate', [String(index + 1), url.href]));
     }
     seen.add(url.href);
     return url.href;
@@ -32,7 +34,7 @@ export function parseSettings(value) {
     !Array.isArray(value?.urls)
     || typeof value.privateWindows !== 'boolean'
   ) {
-    throw new Error('Invalid tabnesia settings.');
+    throw new Error(t('errorInvalidSettings'));
   }
 
   return {
@@ -47,7 +49,7 @@ export async function saveSettings(storage, value) {
     `${SETTINGS_KEY}${JSON.stringify(current)}`,
   );
   if (bytes.length > SYNC_ITEM_LIMIT) {
-    throw new Error('Pinned URLs exceed Firefox sync\'s 8 KB item limit.');
+    throw new Error(t('errorSyncLimit'));
   }
   await storage.sync.set({ [SETTINGS_KEY]: current });
   return current;
@@ -70,17 +72,17 @@ export function parseBackup(text) {
   try {
     value = JSON.parse(text);
   } catch {
-    throw new Error('The selected file is not valid JSON.');
+    throw new Error(t('errorInvalidJson'));
   }
 
   if (value?.version !== 1) {
-    throw new Error('The selected file is not a tabnesia version 1 backup.');
+    throw new Error(t('errorInvalidBackup'));
   }
 
   try {
     return parseSettings(value);
   } catch {
-    throw new Error('The selected file is not a tabnesia version 1 backup.');
+    throw new Error(t('errorInvalidBackup'));
   }
 }
 

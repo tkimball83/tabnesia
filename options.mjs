@@ -12,12 +12,31 @@ const privateWindows = document.querySelector('#private-windows');
 const privateHelp = document.querySelector('#private-help');
 const status = document.querySelector('#status');
 const externalWarning = document.querySelector('#external-change');
+const pinLimit = document.querySelector('#pin-limit');
+const PIN_LIMIT = 15;
+const t = (key) => browser.i18n.getMessage(key);
 let dragged;
 let draggedFrom;
 let dropped;
 let lastSaved;
 let changeEpoch = 0;
 let queue = Promise.resolve();
+
+function localize(root) {
+  for (const el of root.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of root.querySelectorAll('[data-i18n-attr]')) {
+    const [attr, key] = el.dataset.i18nAttr.split('=');
+    el.setAttribute(attr, t(key));
+  }
+}
+localize(document);
+localize(template.content);
+document.documentElement.lang = browser.i18n.getUILanguage()
+  .replaceAll('_', '-');
+const dir = t('@@bidi_dir');
+if (dir === 'ltr' || dir === 'rtl') document.documentElement.dir = dir;
 
 function enqueue(task) {
   const result = queue.then(task);
@@ -31,6 +50,7 @@ function updateButtons() {
     row.querySelector('.up').disabled = index === 0;
     row.querySelector('.down').disabled = index === rows.length - 1;
   });
+  pinLimit.hidden = rows.length <= PIN_LIMIT;
 }
 
 function addRow(url = '') {
@@ -47,7 +67,7 @@ function render(urls) {
 }
 
 function changed() {
-  status.textContent = 'Unsaved changes';
+  status.textContent = t('statusUnsaved');
 }
 
 async function refreshPrivateAccess() {
@@ -68,7 +88,7 @@ form.addEventListener('submit', (event) => {
   event.preventDefault();
   const epoch = changeEpoch;
   return enqueue(async () => {
-    status.textContent = 'Saving…';
+    status.textContent = t('statusSaving');
     form.inert = true;
     const previousSaved = lastSaved;
     try {
@@ -79,7 +99,7 @@ form.addEventListener('submit', (event) => {
       lastSaved = JSON.stringify(current);
       await saveSettings(browser.storage, current);
       render(current.urls);
-      status.textContent = 'Saved';
+      status.textContent = t('statusSaved');
       if (changeEpoch === epoch) externalWarning.hidden = true;
     } catch (error) {
       lastSaved = previousSaved;
@@ -165,7 +185,7 @@ list.addEventListener('dragend', () => {
 
 document.querySelector('#export').addEventListener('click', () => (
   enqueue(async () => {
-    status.textContent = 'Exporting…';
+    status.textContent = t('statusExporting');
     form.inert = true;
     try {
       const current = await loadSettings(browser.storage);
@@ -179,8 +199,8 @@ document.querySelector('#export').addEventListener('click', () => (
         download: 'tabnesia-pins.json',
       });
       link.click();
-      setTimeout(() => URL.revokeObjectURL(href), 0);
-      status.textContent = 'Backup exported';
+      setTimeout(() => URL.revokeObjectURL(href), 30_000);
+      status.textContent = t('statusExported');
     } catch (error) {
       status.textContent = error.message;
     } finally {
@@ -194,7 +214,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
   if (!file) return undefined;
   const epoch = changeEpoch;
   return enqueue(async () => {
-    status.textContent = 'Importing…';
+    status.textContent = t('statusImporting');
     form.inert = true;
     const previousSaved = lastSaved;
     try {
@@ -203,7 +223,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
       await saveSettings(browser.storage, imported);
       render(imported.urls);
       privateWindows.checked = imported.privateWindows;
-      status.textContent = 'Backup imported and saved';
+      status.textContent = t('statusImported');
       if (changeEpoch === epoch) externalWarning.hidden = true;
     } catch (error) {
       lastSaved = previousSaved;
