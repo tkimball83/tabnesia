@@ -25,9 +25,11 @@ enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
 Launch tabnesia in a temporary Firefox profile:
 
 ```sh
-npx --yes web-ext run \
-  --ignore-files test.mjs background.test.mjs README.md
+npx --yes web-ext run
 ```
+
+Non-extension files are excluded via `ignoreFiles` in `web-ext-config.mjs`,
+which web-ext discovers automatically.
 
 ### Test with existing extensions and settings
 
@@ -36,12 +38,13 @@ profile into a dedicated test profile.
 
 #### Find the default profile
 
-On macOS, find the default release profile:
+Open `about:profiles` in Firefox and copy the root directory of the profile
+marked as the default — a stale `default-release` directory on disk may not be
+the one in use. Then:
 
 ```sh
 PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
-SOURCE_PROFILE=$(find "${PROFILES_DIR}" -maxdepth 1 \
-  -type d -name '*.default-release*' -print -quit)
+SOURCE_PROFILE="<root directory from about:profiles>"
 ```
 
 #### Create the test profile
@@ -62,8 +65,7 @@ TEST_PROFILE="${PROFILES_DIR}/tabnesia"
 npx --yes web-ext run \
   --firefox /opt/homebrew/bin/firefox \
   --firefox-profile "${TEST_PROFILE}" \
-  --keep-profile-changes \
-  --ignore-files test.mjs background.test.mjs README.md
+  --keep-profile-changes
 ```
 
 Use `--keep-profile-changes` only with the dedicated test clone. It changes
@@ -72,12 +74,9 @@ browser security and update preferences and is unsafe for a daily profile.
 ## Checks and packaging
 
 ```sh
-node --test test.mjs background.test.mjs
-npx --yes web-ext lint \
-  --ignore-files test.mjs background.test.mjs README.md
-npx --yes web-ext build \
-  --overwrite-dest \
-  --ignore-files test.mjs background.test.mjs README.md
+node --test
+npx --yes web-ext lint
+npx --yes web-ext build --overwrite-dest
 ```
 
 The unsigned archive is written to `web-ext-artifacts/`. Permanent installation
