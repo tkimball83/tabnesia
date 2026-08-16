@@ -33,6 +33,7 @@ test('validates backups', () => {
     + '"privateWindows":true}';
   assert.deepEqual(parseBackup(backup), {
     urls: ['https://example.com/'],
+    reload: [true],
     privateWindows: true,
   });
   assert.throws(
@@ -53,6 +54,7 @@ test('distinguishes missing settings from an empty list', async () => {
   assert.equal(await findSettings(storage), null);
   assert.deepEqual(await loadSettings(storage), {
     urls: [],
+    reload: [],
     privateWindows: false,
   });
 
@@ -64,6 +66,7 @@ test('distinguishes missing settings from an empty list', async () => {
   });
   assert.deepEqual(await loadSettings(storage), {
     urls: ['https://mozilla.org/'],
+    reload: [true],
     privateWindows: false,
   });
 });

@@ -397,6 +397,17 @@ test('background behavior', async (t) => {
     ]]);
   });
 
+  await t.test('activation skips reload when disabled for the slot', async () => {
+    const state = await setup({ urls: ['https://example.net/'] });
+    state.setStored({
+      urls: ['https://example.net/'],
+      reload: [false],
+      privateWindows: false,
+    });
+    await state.events.activated.listener({ tabId: 1 });
+    assert.deepEqual(state.calls, []);
+  });
+
   await t.test('unmanaged activations skip storage reads', async () => {
     const state = await setup({
       initialTabs: [{

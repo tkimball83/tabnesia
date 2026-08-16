@@ -128,7 +128,7 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
     const slot = parseSlot(marker);
     if (slot < 0) return;
     const current = await findSettings(browser.storage);
-    if (!current?.urls[slot]) return;
+    if (!current?.urls[slot] || current.reload[slot] === false) return;
     if (tab.incognito && (
       !current.privateWindows
       || !await browser.extension.isAllowedIncognitoAccess()

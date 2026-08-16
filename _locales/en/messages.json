@@ -25,6 +25,7 @@
   },
   "dragToReorder": { "message": "Drag to reorder" },
   "pinnedUrl": { "message": "Pinned URL" },
+  "reloadLabel": { "message": "Reload" },
   "moveUp": { "message": "Move up" },
   "moveDown": { "message": "Move down" },
   "removeUrl": { "message": "Remove URL" },

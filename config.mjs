@@ -1,4 +1,4 @@
-const DEFAULT_SETTINGS = { urls: [], privateWindows: false };
+const DEFAULT_SETTINGS = { urls: [], reload: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
 const SETTINGS_KEY = 'settings';
 
@@ -37,10 +37,11 @@ export function parseSettings(value) {
     throw new Error(t('errorInvalidSettings'));
   }
 
-  return {
-    urls: normalizeUrls(value.urls),
-    privateWindows: value.privateWindows,
-  };
+  const urls = normalizeUrls(value.urls);
+  const raw = Array.isArray(value.reload) ? value.reload : [];
+  const reload = urls.map((_, i) => raw[i] !== false);
+
+  return { urls, reload, privateWindows: value.privateWindows };
 }
 
 export async function saveSettings(storage, value) {

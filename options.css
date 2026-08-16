@@ -23,7 +23,7 @@ form[inert] {
 
 .pin {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-columns: auto 1fr auto auto auto auto;
   gap: .4rem;
   margin: .5rem 0;
 }
@@ -68,6 +68,14 @@ button,
   align-self: center;
   cursor: grab;
   user-select: none;
+}
+
+.reload-label {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .private-setting {
