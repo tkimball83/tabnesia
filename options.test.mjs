@@ -115,9 +115,14 @@ function makeEl(className = '') {
 
 function makeRow() {
   const row = makeEl('pin');
+  const reloadLabel = makeEl('reload-label');
+  const reloadCheck = makeEl('reload');
+  reloadCheck.checked = true;
+  reloadLabel.append(reloadCheck);
   row.append(
     makeEl('drag'),
     makeEl('url'),
+    reloadLabel,
     makeEl('up'),
     makeEl('down'),
     makeEl('remove'),
@@ -233,8 +238,8 @@ const THREE = [
   'https://b.example/',
   'https://c.example/',
 ];
-const FOREIGN = { urls: ['https://example.net/'], privateWindows: true };
-const OWN = { urls: [], privateWindows: false };
+const FOREIGN = { urls: ['https://example.net/'], reload: [true], privateWindows: true };
+const OWN = { urls: [], reload: [], privateWindows: false };
 
 test('static i18n keys resolve to messages', () => {
   const read = (name) => readFileSync(new URL(name, import.meta.url), 'utf8');
@@ -454,6 +459,7 @@ test('options page external-change warning', async (t) => {
 
     await state.externalChange({
       urls: ['https://a.example/'],
+      reload: [true],
       privateWindows: false,
     });
     assert.equal(state.warning.hidden, true);

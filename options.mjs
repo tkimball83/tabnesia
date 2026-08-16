@@ -53,16 +53,17 @@ function updateButtons() {
   pinLimit.hidden = rows.length <= PIN_LIMIT;
 }
 
-function addRow(url = '') {
+function addRow(url = '', reload = true) {
   const row = template.content.firstElementChild.cloneNode(true);
   row.querySelector('.url').value = url;
+  row.querySelector('.reload').checked = reload;
   list.append(row);
   return row;
 }
 
-function render(urls) {
+function render(urls, reload = []) {
   list.replaceChildren();
-  urls.forEach(addRow);
+  urls.forEach((url, i) => addRow(url, reload[i] !== false));
   updateButtons();
 }
 
@@ -78,7 +79,7 @@ async function refreshPrivateAccess() {
 
 async function restore() {
   const current = await loadSettings(browser.storage);
-  render(current.urls);
+  render(current.urls, current.reload);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
   status.textContent = '';
@@ -94,11 +95,12 @@ form.addEventListener('submit', (event) => {
     try {
       const current = parseSettings({
         urls: [...list.querySelectorAll('.url')].map((input) => input.value),
+        reload: [...list.querySelectorAll('.reload')].map((input) => input.checked),
         privateWindows: privateWindows.checked,
       });
       lastSaved = JSON.stringify(current);
       await saveSettings(browser.storage, current);
-      render(current.urls);
+      render(current.urls, current.reload);
       status.textContent = t('statusSaved');
       if (changeEpoch === epoch) externalWarning.hidden = true;
     } catch (error) {
@@ -221,7 +223,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
       const imported = parseBackup(await file.text());
       lastSaved = JSON.stringify(imported);
       await saveSettings(browser.storage, imported);
-      render(imported.urls);
+      render(imported.urls, imported.reload);
       privateWindows.checked = imported.privateWindows;
       status.textContent = t('statusImported');
       if (changeEpoch === epoch) externalWarning.hidden = true;
