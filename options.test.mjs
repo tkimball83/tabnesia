@@ -163,7 +163,7 @@ async function setup({ urls } = {}) {
     storage: {
       sync: {
         get: async () => (
-          urls ? { settings: { urls, privateWindows: false } } : {}
+          urls ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } } : {}
         ),
         set: () => new Promise((resolve, reject) => {
           setCalls += 1;
@@ -238,8 +238,8 @@ const THREE = [
   'https://b.example/',
   'https://c.example/',
 ];
-const FOREIGN = { urls: ['https://example.net/'], reload: [true], privateWindows: true };
-const OWN = { urls: [], reload: [], privateWindows: false };
+const FOREIGN = { pins: [{ url: 'https://example.net/', reload: true }], privateWindows: true };
+const OWN = { pins: [], privateWindows: false };
 
 test('static i18n keys resolve to messages', () => {
   const read = (name) => readFileSync(new URL(name, import.meta.url), 'utf8');
@@ -429,8 +429,8 @@ test('options page external-change warning', async (t) => {
   await t.test('a failed import does not adopt its fingerprint', async () => {
     const state = await setup();
     const backup = {
-      version: 1,
-      urls: ['https://b.example/'],
+      version: 2,
+      pins: [{ url: 'https://b.example/', reload: true }],
       privateWindows: false,
     };
     const importing = state.importFile(JSON.stringify(backup));
@@ -440,7 +440,7 @@ test('options page external-change warning', async (t) => {
     assert.equal(state.status.textContent, 'Sync unavailable');
 
     await state.externalChange({
-      urls: ['https://b.example/'],
+      pins: [{ url: 'https://b.example/', reload: true }],
       privateWindows: false,
     });
     assert.equal(state.warning.hidden, false);
@@ -458,8 +458,7 @@ test('options page external-change warning', async (t) => {
     assert.match(state.status.textContent, /not a valid URL/);
 
     await state.externalChange({
-      urls: ['https://a.example/'],
-      reload: [true],
+      pins: [{ url: 'https://a.example/', reload: true }],
       privateWindows: false,
     });
     assert.equal(state.warning.hidden, true);

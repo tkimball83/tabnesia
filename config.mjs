@@ -1,4 +1,4 @@
-const DEFAULT_SETTINGS = { urls: [], reload: [], privateWindows: false };
+const DEFAULT_SETTINGS = { pins: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
 const SETTINGS_KEY = 'settings';
 
@@ -31,17 +31,18 @@ export function normalizeUrls(values) {
 
 export function parseSettings(value) {
   if (
-    !Array.isArray(value?.urls)
+    !Array.isArray(value?.pins)
     || typeof value.privateWindows !== 'boolean'
   ) {
     throw new Error(t('errorInvalidSettings'));
   }
 
-  const urls = normalizeUrls(value.urls);
-  const raw = Array.isArray(value.reload) ? value.reload : [];
-  const reload = urls.map((_, i) => raw[i] !== false);
-
-  return { urls, reload, privateWindows: value.privateWindows };
+  const urls = normalizeUrls(value.pins.map((p) => p.url));
+  const pins = urls.map((url, i) => ({
+    url,
+    reload: value.pins[i].reload !== false,
+  }));
+  return { pins, privateWindows: value.privateWindows };
 }
 
 export async function saveSettings(storage, value) {
@@ -76,7 +77,7 @@ export function parseBackup(text) {
     throw new Error(t('errorInvalidJson'));
   }
 
-  if (value?.version !== 1) {
+  if (value?.version !== 2) {
     throw new Error(t('errorInvalidBackup'));
   }
 
