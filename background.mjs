@@ -211,6 +211,10 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
   return undefined;
 });
+browser.action.onClicked.addListener(() => {
+  browser.runtime.openOptionsPage();
+});
+
 browser.runtime.onStartup.addListener(() => (
   bootstrap().catch(console.error)
 ));

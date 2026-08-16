@@ -62,9 +62,13 @@ async function setup({
       isAllowedIncognitoAccess: async () => incognitoAllowed,
     },
     i18n: { getMessage: (key) => key },
+    action: {
+      onClicked: event(),
+    },
     runtime: {
       onInstalled: events.installed,
       onStartup: events.startup,
+      openOptionsPage: async () => {},
     },
     sessions: {
       getTabValue: async (id) => {
