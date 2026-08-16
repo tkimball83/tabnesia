@@ -77,7 +77,7 @@ export function parseBackup(text) {
     throw new Error(t('errorInvalidJson'));
   }
 
-  if (value?.version !== 2) {
+  if (value?.version !== 1) {
     throw new Error(t('errorInvalidBackup'));
   }
 

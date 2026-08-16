@@ -429,7 +429,7 @@ test('options page external-change warning', async (t) => {
   await t.test('a failed import does not adopt its fingerprint', async () => {
     const state = await setup();
     const backup = {
-      version: 2,
+      version: 1,
       pins: [{ url: 'https://b.example/', reload: true }],
       privateWindows: false,
     };

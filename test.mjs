@@ -29,19 +29,19 @@ test('normalizes and validates configured URLs', () => {
 });
 
 test('validates backups', () => {
-  const v2 = '{"version":2,"pins":[{"url":"https://example.com","reload":false}],'
+  const backup = '{"version":1,"pins":[{"url":"https://example.com","reload":false}],'
     + '"privateWindows":false}';
-  assert.deepEqual(parseBackup(v2), {
+  assert.deepEqual(parseBackup(backup), {
     pins: [{ url: 'https://example.com/', reload: false }],
     privateWindows: false,
   });
   assert.throws(
-    () => parseBackup('{"version":1,"pins":[],"privateWindows":false}'),
+    () => parseBackup('{"version":2,"pins":[],"privateWindows":false}'),
     /version/,
   );
   assert.throws(() => parseBackup('{'), /valid JSON/);
   assert.throws(
-    () => parseBackup('{"version":2,"pins":"bad","privateWindows":false}'),
+    () => parseBackup('{"version":1,"pins":"bad","privateWindows":false}'),
     /version/,
   );
 });

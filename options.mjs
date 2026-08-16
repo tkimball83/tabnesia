@@ -203,7 +203,7 @@ document.querySelector('#export').addEventListener('click', () => (
     try {
       const current = await loadSettings(browser.storage);
       const blob = new Blob(
-        [JSON.stringify({ version: 2, ...current }, null, 2)],
+        [JSON.stringify({ version: 1, ...current }, null, 2)],
         { type: 'application/json' },
       );
       const href = URL.createObjectURL(blob);
