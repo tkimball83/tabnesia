@@ -56,7 +56,7 @@ function updateButtons() {
 function addRow(url = '', reload = true) {
   const row = template.content.firstElementChild.cloneNode(true);
   row.querySelector('.url').value = url;
-  row.querySelector('.reload').checked = reload;
+  row.querySelector('.reload').setAttribute('aria-pressed', String(reload));
   list.append(row);
   return row;
 }
@@ -95,7 +95,7 @@ form.addEventListener('submit', (event) => {
     try {
       const current = parseSettings({
         urls: [...list.querySelectorAll('.url')].map((input) => input.value),
-        reload: [...list.querySelectorAll('.reload')].map((input) => input.checked),
+        reload: [...list.querySelectorAll('.reload')].map((btn) => btn.getAttribute('aria-pressed') === 'true'),
         privateWindows: privateWindows.checked,
       });
       lastSaved = JSON.stringify(current);
@@ -120,6 +120,13 @@ document.querySelector('#add').addEventListener('click', () => {
 });
 
 list.addEventListener('click', (event) => {
+  const toggle = event.target.closest('.reload');
+  if (toggle) {
+    const pressed = toggle.getAttribute('aria-pressed') === 'true';
+    toggle.setAttribute('aria-pressed', String(!pressed));
+    changed();
+    return;
+  }
   const action = event.target.closest('.remove, .up, .down');
   if (!action) return;
   const row = event.target.closest('.pin');

@@ -115,16 +115,16 @@ function makeEl(className = '') {
 
 function makeRow() {
   const row = makeEl('pin');
-  const reloadLabel = makeEl('reload-label');
-  const reloadCheck = makeEl('reload');
-  reloadCheck.checked = true;
-  reloadLabel.append(reloadCheck);
+  const reload = makeEl('reload');
+  reload.attrs = { 'aria-pressed': 'true' };
+  reload.setAttribute = (name, value) => { reload.attrs[name] = value; };
+  reload.getAttribute = (name) => reload.attrs[name];
   row.append(
     makeEl('drag'),
     makeEl('url'),
-    reloadLabel,
     makeEl('up'),
     makeEl('down'),
+    reload,
     makeEl('remove'),
   );
   return row;
