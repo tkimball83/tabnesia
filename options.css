@@ -1,45 +1,376 @@
 :root {
+  --accent: #4ADE80;
+  --accent-hover: #3cc972;
+  --accent-text: #166534;
+  --surface: #f4f5f7;
+  --card: #ffffff;
+  --card-border: #e2e5e9;
+  --card-shadow: rgba(0,0,0,.06);
+  --text: #1a1d21;
+  --text-secondary: #6b7280;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --input-focus: #4ADE80;
+  --btn-bg: #f0f1f3;
+  --btn-border: #d1d5db;
+  --btn-hover: #e5e7eb;
+  --danger: #ef4444;
+  --danger-bg: rgba(239,68,68,.08);
+  --divider: #eef0f2;
+  --reload-off: #d1d5db;
+  --pin-hover: rgba(0,0,0,.015);
   font: menu;
+  font-size: 14px;
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #111318;
+    --card: #1c1f26;
+    --card-border: #2e333b;
+    --card-shadow: rgba(0,0,0,.25);
+    --text: #e4e7eb;
+    --text-secondary: #8b929e;
+    --input-bg: #262a32;
+    --input-border: #3a3f4a;
+    --btn-bg: #262a32;
+    --btn-border: #3a3f4a;
+    --btn-hover: #333840;
+    --danger: #f87171;
+    --danger-bg: rgba(248,113,113,.1);
+    --divider: #2a2f37;
+    --accent-text: #bbf7d0;
+    --reload-off: #4b5563;
+    --pin-hover: rgba(255,255,255,.02);
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface: #111318;
+  --card: #1c1f26;
+  --card-border: #2e333b;
+  --card-shadow: rgba(0,0,0,.25);
+  --text: #e4e7eb;
+  --text-secondary: #8b929e;
+  --input-bg: #262a32;
+  --input-border: #3a3f4a;
+  --btn-bg: #262a32;
+  --btn-border: #3a3f4a;
+  --btn-hover: #333840;
+  --danger: #f87171;
+  --danger-bg: rgba(248,113,113,.1);
+  --divider: #2a2f37;
+  --accent-text: #bbf7d0;
+  --reload-off: #4b5563;
+  --pin-hover: rgba(255,255,255,.02);
+}
+
+:root[data-theme="light"] {
+  --surface: #f4f5f7;
+  --card: #ffffff;
+  --card-border: #e2e5e9;
+  --card-shadow: rgba(0,0,0,.06);
+  --text: #1a1d21;
+  --text-secondary: #6b7280;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --btn-bg: #f0f1f3;
+  --btn-border: #d1d5db;
+  --btn-hover: #e5e7eb;
+  --danger: #ef4444;
+  --danger-bg: rgba(239,68,68,.08);
+  --divider: #eef0f2;
+  --accent-text: #166534;
+  --reload-off: #d1d5db;
+  --pin-hover: rgba(0,0,0,.015);
 }
 
 body {
   margin: 0;
+  background: var(--surface);
 }
 
 main {
-  max-width: 52rem;
-  margin: 2rem auto;
-  padding: 0 1rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .5rem;
+}
+
+.header svg {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+
+.intro {
+  color: var(--text-secondary);
+  font-size: .875rem;
+  line-height: 1.5;
+  margin-bottom: 1.75rem;
 }
 
 form[inert] {
   opacity: .7;
 }
 
+/* Card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px var(--card-shadow);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--divider);
+}
+
+.card-label {
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-secondary);
+}
+
+/* Pin rows */
 #pins {
   padding: 0;
   list-style: none;
+  margin: 0;
 }
 
 .pin {
   display: grid;
   grid-template-columns: auto 1fr auto auto auto auto;
-  gap: .4rem;
-  margin: .5rem 0;
+  gap: .5rem;
+  align-items: center;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--divider);
+  transition: background .12s;
+}
+
+.pin:last-child {
+  border-bottom: none;
+}
+
+.pin:hover {
+  background: var(--pin-hover);
 }
 
 .pin.dragging {
   opacity: .45;
 }
 
-.url {
-  min-width: 0;
-  padding: .45rem;
+.drag {
+  cursor: grab;
+  user-select: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  opacity: .5;
+  transition: opacity .12s;
+  padding: 0 .15rem;
 }
 
-button,
+.pin:hover .drag {
+  opacity: .85;
+}
+
+.url {
+  min-width: 0;
+  padding: .4rem .6rem;
+  font-size: .875rem;
+  font-family: inherit;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.url:focus {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 2.5px rgba(74,222,128,.2);
+}
+
+/* Icon buttons */
+.up,
+.down,
+.reload,
+.remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 .5rem;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-size: .875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+
+.up:hover,
+.down:hover,
+.reload:hover,
+.remove:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+}
+
+.up:disabled,
+.down:disabled {
+  opacity: .3;
+  cursor: default;
+}
+
+.up:disabled:hover,
+.down:disabled:hover {
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+}
+
+/* Reload toggle */
+.reload {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.reload[aria-pressed="true"] {
+  background: rgba(74,222,128,.12);
+  border-color: rgba(74,222,128,.35);
+  color: var(--accent-text);
+}
+
+.reload[aria-pressed="false"] {
+  opacity: .4;
+}
+
+/* Remove */
+.remove {
+  font-size: .75rem;
+}
+
+.remove:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Add URL */
+#add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  width: 100%;
+  padding: .55rem;
+  border: 1px dashed var(--btn-border);
+  border-top: none;
+  border-radius: 0 0 9px 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: .8rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+#add:hover {
+  background: rgba(74,222,128,.06);
+  color: var(--accent-text);
+  border-color: rgba(74,222,128,.3);
+}
+
+/* Private windows */
+.private-setting {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 0;
+  padding: .75rem 1rem;
+  font-size: .875rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.private-setting input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+  margin-top: 1.75rem;
+}
+
+.actions [type="submit"] {
+  padding: .5rem 1.4rem;
+  font-size: .875rem;
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #0f2918;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.actions [type="submit"]:hover {
+  background: var(--accent-hover);
+}
+
+.actions-spacer {
+  flex: 1;
+}
+
+#export,
 .button {
-  padding: .45rem .7rem;
+  padding: .45rem .9rem;
+  font-size: .8rem;
+  font-family: inherit;
+  border: 1px solid var(--btn-border);
+  border-radius: 7px;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+#export:hover,
+.button:hover {
+  background: var(--btn-hover);
+  color: var(--text);
 }
 
 .visually-hidden {
@@ -52,41 +383,28 @@ button,
 }
 
 #import:focus-visible + .button {
-  outline: 2px solid AccentColor;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.button {
-  border: 1px solid ButtonBorder;
-  border-radius: 2px;
-  background: ButtonFace;
-  color: ButtonText;
-  cursor: default;
-}
-
-.drag {
-  align-self: center;
-  cursor: grab;
-  user-select: none;
-}
-
-.reload[aria-pressed="false"] {
-  opacity: .35;
-}
-
-.private-setting {
-  display: block;
-  margin: 1.5rem 0 .5rem;
-}
-
+/* Help & status */
 .help,
 #status {
+  font-size: .8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
   min-height: 1.2em;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
-  margin-top: 1.5rem;
+#status {
+  margin-top: 1rem;
+}
+
+#pin-limit {
+  margin-top: .75rem;
+}
+
+#external-change {
+  color: var(--danger);
+  margin-top: .5rem;
 }

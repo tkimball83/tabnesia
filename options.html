@@ -9,30 +9,60 @@
   </head>
   <body>
     <main>
-      <h1 data-i18n="extensionName">Tabnesia</h1>
-      <p data-i18n="intro">
+      <div class="header">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"
+          role="img" aria-hidden="true">
+          <defs>
+            <clipPath id="arcClip">
+              <rect x="0" y="0" width="216" height="512"/>
+              <rect x="296" y="0" width="216" height="512"/>
+            </clipPath>
+            <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#E8E8EC"/>
+              <stop offset="35%" stop-color="#D0D0D6"/>
+              <stop offset="50%" stop-color="#F0F0F2"/>
+              <stop offset="65%" stop-color="#B8B8C0"/>
+              <stop offset="100%" stop-color="#A0A0A8"/>
+            </linearGradient>
+          </defs>
+          <path d="M189,397 A110,110 0 1,1 323,397" fill="none"
+            stroke="#4ADE80" stroke-width="24" stroke-linecap="round"
+            clip-path="url(#arcClip)"/>
+          <polygon points="280,430 346,424 304,366" fill="#4ADE80"/>
+          <rect x="108" y="86" width="296" height="62" rx="31"
+            fill="url(#metal)"/>
+          <path d="M226 148H286V320L256 365 226 320Z" fill="url(#metal)"/>
+        </svg>
+        <h1 data-i18n="extensionName">Tabnesia</h1>
+      </div>
+      <p class="intro" data-i18n="intro">
         These URLs are pinned in this order in every Firefox window.
       </p>
 
       <form id="settings" inert>
-        <ol id="pins" role="list" aria-label="Pinned URLs"
-          data-i18n-attr="aria-label=pinnedUrls"></ol>
-        <button id="add" type="button" data-i18n="addUrl">Add URL</button>
+        <div class="card">
+          <ol id="pins" role="list" aria-label="Pinned URLs"
+            data-i18n-attr="aria-label=pinnedUrls"></ol>
+          <button id="add" type="button" data-i18n="addUrl">+ Add URL</button>
+        </div>
         <p id="pin-limit" class="help" data-i18n="pinLimitWarning" hidden>
           More than 15 pinned tabs can slow Firefox down.
         </p>
 
-        <label class="private-setting">
-          <input id="private-windows" type="checkbox">
-          <span data-i18n="privateLabel">Enable pins in Private Windows</span>
-        </label>
+        <div class="card" style="margin-top: 1rem; padding: 0;">
+          <label class="private-setting">
+            <input id="private-windows" type="checkbox">
+            <span data-i18n="privateLabel">Enable pins in Private Windows</span>
+          </label>
+        </div>
         <p id="private-help" class="help" data-i18n="privateHelp" hidden>
-          First enable “Run in Private Windows” for tabnesia in Firefox’s
+          First enable "Run in Private Windows" for tabnesia in Firefox's
           Add-ons Manager, then reopen this page.
         </p>
 
         <div class="actions">
           <button type="submit" data-i18n="save">Save</button>
+          <span class="actions-spacer"></span>
           <button id="export" type="button" data-i18n="exportBackup">
             Export backup
           </button>
