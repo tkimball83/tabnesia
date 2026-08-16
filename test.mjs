@@ -29,20 +29,20 @@ test('normalizes and validates configured URLs', () => {
 });
 
 test('validates backups', () => {
-  const backup = '{"version":1,"urls":["https://example.com"],'
-    + '"privateWindows":true}';
+  const backup = '{"version":1,"pins":[{"url":"https://example.com","reload":false}],'
+    + '"privateWindows":false}';
   assert.deepEqual(parseBackup(backup), {
-    urls: ['https://example.com/'],
-    privateWindows: true,
+    pins: [{ url: 'https://example.com/', reload: false }],
+    privateWindows: false,
   });
   assert.throws(
-    () => parseBackup('{"version":2,"urls":[],"privateWindows":false}'),
-    /version 1/,
+    () => parseBackup('{"version":2,"pins":[],"privateWindows":false}'),
+    /version/,
   );
   assert.throws(() => parseBackup('{'), /valid JSON/);
   assert.throws(
-    () => parseBackup('{"version":1,"urls":"bad","privateWindows":false}'),
-    /version 1/,
+    () => parseBackup('{"version":1,"pins":"bad","privateWindows":false}'),
+    /version/,
   );
 });
 
@@ -52,18 +52,18 @@ test('distinguishes missing settings from an empty list', async () => {
   };
   assert.equal(await findSettings(storage), null);
   assert.deepEqual(await loadSettings(storage), {
-    urls: [],
+    pins: [],
     privateWindows: false,
   });
 
   storage.sync.get = async () => ({
     settings: {
-      urls: ['https://mozilla.org'],
+      pins: [{ url: 'https://mozilla.org', reload: true }],
       privateWindows: false,
     },
   });
   assert.deepEqual(await loadSettings(storage), {
-    urls: ['https://mozilla.org/'],
+    pins: [{ url: 'https://mozilla.org/', reload: true }],
     privateWindows: false,
   });
 });
@@ -74,7 +74,7 @@ test('reports the Firefox sync item limit before saving', async () => {
   };
   await assert.rejects(
     saveSettings(storage, {
-      urls: [`https://example.com/${'x'.repeat(8200)}`],
+      pins: [{ url: `https://example.com/${'x'.repeat(8200)}`, reload: true }],
       privateWindows: false,
     }),
     /8 KB/,
@@ -83,7 +83,7 @@ test('reports the Firefox sync item limit before saving', async () => {
 
 test('rejects malformed stored settings', () => {
   assert.throws(
-    () => parseSettings({ urls: 'https://example.com' }),
+    () => parseSettings({ pins: 'not an array', privateWindows: false }),
     /Invalid/,
   );
 });

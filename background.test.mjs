@@ -48,7 +48,7 @@ async function setup({
   const tabs = initialTabs.map(({ slot: _slot, ...tab }) => ({ ...tab }));
   let stored = missingSettings
     ? {}
-    : { settings: { urls, privateWindows } };
+    : { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows } };
   let failNextMarker = false;
   let failedSessionReadId;
   let failedUpdateId;
@@ -62,9 +62,13 @@ async function setup({
       isAllowedIncognitoAccess: async () => incognitoAllowed,
     },
     i18n: { getMessage: (key) => key },
+    action: {
+      onClicked: event(),
+    },
     runtime: {
       onInstalled: events.installed,
       onStartup: events.startup,
+      openOptionsPage: async () => {},
     },
     sessions: {
       getTabValue: async (id) => {
@@ -332,32 +336,32 @@ test('background behavior', async (t) => {
   await t.test('only URL changes reload managed tabs', async () => {
     const state = await setup();
     state.setStored({
-      urls: ['https://example.com/'],
+      pins: [{ url: 'https://example.com/', reload: true }],
       privateWindows: true,
     });
     await state.events.storage.listener({
       settings: {
         oldValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: false,
         },
         newValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: true,
         },
       },
     }, 'sync');
     assert.deepEqual(state.calls, []);
 
-    state.setStored({ urls: ['https://example.net/'], privateWindows: false });
+    state.setStored({ pins: [{ url: 'https://example.net/', reload: true }], privateWindows: false });
     await state.events.storage.listener({
       settings: {
         oldValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: true,
         },
         newValue: {
-          urls: ['https://example.net/'],
+          pins: [{ url: 'https://example.net/', reload: true }],
           privateWindows: false,
         },
       },
@@ -374,11 +378,11 @@ test('background behavior', async (t) => {
     await state.events.storage.listener({
       settings: {
         oldValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: false,
         },
         newValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: false,
         },
       },
@@ -395,6 +399,16 @@ test('background behavior', async (t) => {
       1,
       { url: 'https://example.net/', loadReplace: true },
     ]]);
+  });
+
+  await t.test('activation skips reload when disabled for the slot', async () => {
+    const state = await setup({ urls: ['https://example.net/'] });
+    state.setStored({
+      pins: [{ url: 'https://example.net/', reload: false }],
+      privateWindows: false,
+    });
+    await state.events.activated.listener({ tabId: 1 });
+    assert.deepEqual(state.calls, []);
   });
 
   await t.test('unmanaged activations skip storage reads', async () => {
@@ -477,11 +491,11 @@ test('background behavior', async (t) => {
     const change = {
       settings: {
         oldValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: false,
         },
         newValue: {
-          urls: ['https://example.com/'],
+          pins: [{ url: 'https://example.com/', reload: true }],
           privateWindows: true,
         },
       },
@@ -504,7 +518,7 @@ test('background behavior', async (t) => {
   await t.test('transient marker reads do not duplicate pins', async () => {
     const state = await setup();
     state.setStored({
-      urls: ['https://example.com/'],
+      pins: [{ url: 'https://example.com/', reload: true }],
       privateWindows: true,
     });
     state.failSessionRead(1);
@@ -514,11 +528,11 @@ test('background behavior', async (t) => {
       await state.events.storage.listener({
         settings: {
           oldValue: {
-            urls: ['https://example.com/'],
+            pins: [{ url: 'https://example.com/', reload: true }],
             privateWindows: false,
           },
           newValue: {
-            urls: ['https://example.com/'],
+            pins: [{ url: 'https://example.com/', reload: true }],
             privateWindows: true,
           },
         },
@@ -559,16 +573,16 @@ test('background behavior', async (t) => {
 
   await t.test('failed marker writes roll back the created tab', async () => {
     const state = await setup({ initialTabs: [], urls: [] });
-    state.setStored({ urls: ['https://example.com/'], privateWindows: false });
+    state.setStored({ pins: [{ url: 'https://example.com/', reload: true }], privateWindows: false });
     state.failMarker();
     const originalError = console.error;
     console.error = () => {};
     try {
       await state.events.storage.listener({
         settings: {
-          oldValue: { urls: [], privateWindows: false },
+          oldValue: { pins: [], privateWindows: false },
           newValue: {
-            urls: ['https://example.com/'],
+            pins: [{ url: 'https://example.com/', reload: true }],
             privateWindows: false,
           },
         },
@@ -589,18 +603,18 @@ test('background behavior', async (t) => {
 
   await t.test('invalid synced settings do not modify tabs', async () => {
     const state = await setup();
-    state.setStored({ urls: 'https://invalid.example', privateWindows: false });
+    state.setStored({ pins: 'https://invalid.example', privateWindows: false });
     const originalError = console.error;
     console.error = () => {};
     try {
       await state.events.storage.listener({
         settings: {
           oldValue: {
-            urls: ['https://example.com/'],
+            pins: [{ url: 'https://example.com/', reload: true }],
             privateWindows: false,
           },
           newValue: {
-            urls: 'https://invalid.example',
+            pins: 'https://invalid.example',
             privateWindows: false,
           },
         },

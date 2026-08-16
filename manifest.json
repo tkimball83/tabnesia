@@ -11,6 +11,10 @@
     "48": "icons/tabnesia.svg",
     "96": "icons/tabnesia.svg"
   },
+  "action": {
+    "default_icon": "icons/tabnesia.svg",
+    "default_title": "__MSG_extensionName__"
+  },
   "permissions": ["storage", "sessions"],
   "incognito": "spanning",
   "background": {
