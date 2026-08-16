@@ -70,12 +70,8 @@ button,
   user-select: none;
 }
 
-.reload-label {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  white-space: nowrap;
-  cursor: default;
+.reload[aria-pressed="false"] {
+  opacity: .35;
 }
 
 .private-setting {
