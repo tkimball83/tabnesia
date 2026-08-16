@@ -13,4 +13,5 @@ jobs:
         with:
           node-version: 24
       - run: node --test
+      - run: npx --yes eslint@9 .
       - run: npx --yes web-ext@10 lint

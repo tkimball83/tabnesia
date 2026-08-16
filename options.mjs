@@ -53,16 +53,17 @@ function updateButtons() {
   pinLimit.hidden = rows.length <= PIN_LIMIT;
 }
 
-function addRow(url = '') {
+function addRow(url = '', reload = true) {
   const row = template.content.firstElementChild.cloneNode(true);
   row.querySelector('.url').value = url;
+  row.querySelector('.reload').setAttribute('aria-pressed', String(reload));
   list.append(row);
   return row;
 }
 
-function render(urls) {
+function render(pins) {
   list.replaceChildren();
-  urls.forEach(addRow);
+  pins.forEach((pin) => addRow(pin.url, pin.reload !== false));
   updateButtons();
 }
 
@@ -78,7 +79,7 @@ async function refreshPrivateAccess() {
 
 async function restore() {
   const current = await loadSettings(browser.storage);
-  render(current.urls);
+  render(current.pins);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
   status.textContent = '';
@@ -92,13 +93,18 @@ form.addEventListener('submit', (event) => {
     form.inert = true;
     const previousSaved = lastSaved;
     try {
+      const urls = [...list.querySelectorAll('.url')];
+      const reloads = [...list.querySelectorAll('.reload')];
       const current = parseSettings({
-        urls: [...list.querySelectorAll('.url')].map((input) => input.value),
+        pins: urls.map((input, i) => ({
+          url: input.value,
+          reload: reloads[i].getAttribute('aria-pressed') === 'true',
+        })),
         privateWindows: privateWindows.checked,
       });
       lastSaved = JSON.stringify(current);
       await saveSettings(browser.storage, current);
-      render(current.urls);
+      render(current.pins);
       status.textContent = t('statusSaved');
       if (changeEpoch === epoch) externalWarning.hidden = true;
     } catch (error) {
@@ -118,6 +124,13 @@ document.querySelector('#add').addEventListener('click', () => {
 });
 
 list.addEventListener('click', (event) => {
+  const toggle = event.target.closest('.reload');
+  if (toggle) {
+    const pressed = toggle.getAttribute('aria-pressed') === 'true';
+    toggle.setAttribute('aria-pressed', String(!pressed));
+    changed();
+    return;
+  }
   const action = event.target.closest('.remove, .up, .down');
   if (!action) return;
   const row = event.target.closest('.pin');
@@ -221,7 +234,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
       const imported = parseBackup(await file.text());
       lastSaved = JSON.stringify(imported);
       await saveSettings(browser.storage, imported);
-      render(imported.urls);
+      render(imported.pins);
       privateWindows.checked = imported.privateWindows;
       status.textContent = t('statusImported');
       if (changeEpoch === epoch) externalWarning.hidden = true;
