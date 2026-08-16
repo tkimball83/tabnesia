@@ -61,9 +61,9 @@ function addRow(url = '', reload = true) {
   return row;
 }
 
-function render(urls, reload = []) {
+function render(pins) {
   list.replaceChildren();
-  urls.forEach((url, i) => addRow(url, reload[i] !== false));
+  pins.forEach((pin) => addRow(pin.url, pin.reload !== false));
   updateButtons();
 }
 
@@ -79,7 +79,7 @@ async function refreshPrivateAccess() {
 
 async function restore() {
   const current = await loadSettings(browser.storage);
-  render(current.urls, current.reload);
+  render(current.pins);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
   status.textContent = '';
@@ -93,14 +93,18 @@ form.addEventListener('submit', (event) => {
     form.inert = true;
     const previousSaved = lastSaved;
     try {
+      const urls = [...list.querySelectorAll('.url')];
+      const reloads = [...list.querySelectorAll('.reload')];
       const current = parseSettings({
-        urls: [...list.querySelectorAll('.url')].map((input) => input.value),
-        reload: [...list.querySelectorAll('.reload')].map((btn) => btn.getAttribute('aria-pressed') === 'true'),
+        pins: urls.map((input, i) => ({
+          url: input.value,
+          reload: reloads[i].getAttribute('aria-pressed') === 'true',
+        })),
         privateWindows: privateWindows.checked,
       });
       lastSaved = JSON.stringify(current);
       await saveSettings(browser.storage, current);
-      render(current.urls, current.reload);
+      render(current.pins);
       status.textContent = t('statusSaved');
       if (changeEpoch === epoch) externalWarning.hidden = true;
     } catch (error) {
@@ -199,7 +203,7 @@ document.querySelector('#export').addEventListener('click', () => (
     try {
       const current = await loadSettings(browser.storage);
       const blob = new Blob(
-        [JSON.stringify({ version: 1, ...current }, null, 2)],
+        [JSON.stringify({ version: 2, ...current }, null, 2)],
         { type: 'application/json' },
       );
       const href = URL.createObjectURL(blob);
@@ -230,7 +234,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
       const imported = parseBackup(await file.text());
       lastSaved = JSON.stringify(imported);
       await saveSettings(browser.storage, imported);
-      render(imported.urls, imported.reload);
+      render(imported.pins);
       privateWindows.checked = imported.privateWindows;
       status.textContent = t('statusImported');
       if (changeEpoch === epoch) externalWarning.hidden = true;

@@ -50,7 +50,7 @@ async function reconcileWindow(windowId, resetUrls = false) {
   tagged.forEach(({ tab, slot }) => {
     if (slot !== undefined) managedIds.add(tab.id);
   });
-  const count = shouldManage ? current.urls.length : 0;
+  const count = shouldManage ? current.pins.length : 0;
   const { slots, extras } = partitionSlots(tagged, count);
 
   await Promise.all(extras.map(release));
@@ -59,12 +59,12 @@ async function reconcileWindow(windowId, resetUrls = false) {
     return;
   }
 
-  for (let slot = 0; slot < current.urls.length; slot += 1) {
+  for (let slot = 0; slot < current.pins.length; slot += 1) {
     let tab = slots[slot];
     if (!tab) {
       tab = await browser.tabs.create({
         windowId,
-        url: current.urls[slot],
+        url: current.pins[slot].url,
         active: false,
         pinned: true,
       });
@@ -78,7 +78,7 @@ async function reconcileWindow(windowId, resetUrls = false) {
     } else if (!tab.pinned || resetUrls) {
       tab = await browser.tabs.update(tab.id, {
         pinned: true,
-        ...(resetUrls && { url: current.urls[slot], loadReplace: true }),
+        ...(resetUrls && { url: current.pins[slot].url, loadReplace: true }),
       });
     }
     slots[slot] = tab;
@@ -128,13 +128,14 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
     const slot = parseSlot(marker);
     if (slot < 0) return;
     const current = await findSettings(browser.storage);
-    if (!current?.urls[slot] || current.reload[slot] === false) return;
+    const pin = current?.pins[slot];
+    if (!pin || pin.reload === false) return;
     if (tab.incognito && (
       !current.privateWindows
       || !await browser.extension.isAllowedIncognitoAccess()
     )) return;
     await browser.tabs.update(tabId, {
-      url: current.urls[slot],
+      url: pin.url,
       loadReplace: true,
     });
   } catch (error) {
@@ -199,8 +200,8 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync' || !changes.settings) return undefined;
   const { oldValue, newValue } = changes.settings;
   const urlsChanged = changed({
-    oldValue: oldValue?.urls,
-    newValue: newValue?.urls,
+    oldValue: Array.isArray(oldValue?.pins) ? oldValue.pins.map((p) => p.url) : undefined,
+    newValue: Array.isArray(newValue?.pins) ? newValue.pins.map((p) => p.url) : undefined,
   });
   const privateChanged = changed({
     oldValue: oldValue?.privateWindows,
