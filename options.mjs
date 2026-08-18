@@ -51,7 +51,6 @@ function updateButtons() {
     row.querySelector('.down').disabled = index === rows.length - 1;
   });
   pinLimit.hidden = rows.length <= PIN_LIMIT;
-  document.querySelector('#add').disabled = rows.length >= PIN_LIMIT;
 }
 
 function addRow(url = '', reload = true) {
