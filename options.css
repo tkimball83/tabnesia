@@ -136,22 +136,6 @@ form[inert] {
   overflow: hidden;
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: .75rem 1rem;
-  border-bottom: 1px solid var(--divider);
-}
-
-.card-label {
-  font-size: .7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--text-secondary);
-}
-
 /* Pin rows */
 #pins {
   padding: 0;
