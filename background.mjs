@@ -91,7 +91,10 @@ async function reconcileWindow(windowId, resetUrls = false) {
   const latest = await browser.tabs.query({ windowId });
   const indexes = new Map(latest.map((tab) => [tab.id, tab.index]));
   if (slots.some((tab, slot) => indexes.get(tab.id) !== slot)) {
-    await browser.tabs.move(slots.map((tab) => tab.id), { index: 0 });
+    // A slot tab can close between the query and the move; the next tab
+    // event re-reconciles, so a failed move is safe to swallow.
+    await browser.tabs.move(slots.map((tab) => tab.id), { index: 0 })
+      .catch(console.error);
   }
   initializedWindows.add(windowId);
 }
