@@ -116,12 +116,14 @@ export function parseBackup(text) {
   }
 }
 
-// A managed tab's session marker names the pin it shows: { id, url }.
-// Anything else, including 1.0.0's bare slot numbers, is not a marker this
-// version understands, and its tab is released.
+// A managed tab's session marker names the pin it shows: { id, url }. `url`
+// is null while the tab navigates, so if navigating or recording the new URL
+// fails, the next check navigates it again. Anything else, including 1.0.0's
+// bare slot numbers, is not a marker this version understands, and its tab
+// is released.
 export function parseMarker(marker) {
   return typeof marker?.id === 'string' && marker.id
-    && typeof marker.url === 'string'
+    && (typeof marker.url === 'string' || marker.url === null)
     ? { id: marker.id, url: marker.url }
     : null;
 }

@@ -80,6 +80,9 @@ async function reconcileWindow(windowId) {
       // Only a pin whose URL was edited navigates its tab; tabs that merely
       // moved keep their page.
       const navigate = slots[slot].marker.url !== url;
+      if (navigate) {
+        await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url: null });
+      }
       if (!tab.pinned || navigate) {
         tab = await browser.tabs.update(tab.id, {
           pinned: true,
@@ -140,12 +143,16 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
     );
     if (!marker) return;
     const current = await findSettings(browser.storage);
-    // A pin whose URL no longer matches the tab has a check queued to
-    // navigate it; reloading the old URL here would only be undone.
-    const pin = current?.pins.find(({ id, url }) => (
-      id === marker.id && url === marker.url
-    ));
-    if (!pin || pin.reload === false) return;
+    if (!current) return;
+    const pin = current.pins.find(({ id }) => id === marker.id);
+    // A tab out of step with its pin (a navigation that did not finish, or a
+    // pin edited or deleted without a check since) needs a check, which
+    // navigates or releases it, not a reload of its old URL.
+    if (!pin || pin.url !== marker.url) {
+      await schedule(tab.windowId);
+      return;
+    }
+    if (pin.reload === false) return;
     if (tab.incognito && (
       !current.privateWindows
       || !await browser.extension.isAllowedIncognitoAccess()

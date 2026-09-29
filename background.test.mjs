@@ -64,7 +64,7 @@ async function setup({
         privateWindows,
       },
     };
-  let failNextMarker = false;
+  let markerWritesBeforeFailure = -1;
   let failedSessionReadId;
   let failedUpdateId;
   let sessionReads = 0;
@@ -96,8 +96,10 @@ async function setup({
       },
       removeTabValue: async (id) => markers.delete(id),
       setTabValue: async (id, _key, value) => {
-        if (failNextMarker) {
-          failNextMarker = false;
+        if (markerWritesBeforeFailure > 0) {
+          markerWritesBeforeFailure -= 1;
+        } else if (markerWritesBeforeFailure === 0) {
+          markerWritesBeforeFailure = -1;
           throw new Error('Marker write failed');
         }
         markers.set(id, value);
@@ -207,8 +209,9 @@ async function setup({
     markers,
     tabs,
     bootstrapReads: () => bootstrapReads,
-    failMarker() {
-      failNextMarker = true;
+    // Fails the marker write that follows `skip` successful ones.
+    failMarker(skip = 0) {
+      markerWritesBeforeFailure = skip;
     },
     failSessionRead(id) {
       failedSessionReadId = id;
@@ -291,6 +294,58 @@ test('background behavior', async (t) => {
     assert.deepEqual(state.calls, [
       ['update', 2, { pinned: true, url: edited, loadReplace: true }],
     ]);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
+  });
+
+  const quietly = async (work) => {
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      await work();
+    } finally {
+      console.error = originalError;
+    }
+  };
+
+  await t.test('a failed marker write after navigating is recovered on click', async () => {
+    const state = await setupThree();
+    const edited = 'https://x.example/';
+    // The tab navigates, then recording its new URL fails.
+    state.failMarker(1);
+    await quietly(() => state.changePins([A, ['b', edited], C]));
+    assert.equal(state.tabs[1].url, edited);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: null });
+
+    // Clicking it runs a check instead of skipping the reload for good.
+    state.calls.length = 0;
+    await state.events.activated.listener({ tabId: 2 });
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
+
+    // From then on it reloads as usual.
+    state.calls.length = 0;
+    await state.events.activated.listener({ tabId: 2 });
+    assert.deepEqual(state.calls, [
+      ['update', 2, { url: edited, loadReplace: true }],
+    ]);
+  });
+
+  await t.test('reverting an edit whose marker write failed restores the tab', async () => {
+    const state = await setupThree();
+    state.failMarker(1);
+    await quietly(() => state.changePins([A, ['b', 'https://x.example/'], C]));
+    await state.changePins([A, B, C]);
+    assert.equal(state.tabs[1].url, ABC[1]);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: ABC[1] });
+  });
+
+  await t.test('a failed navigation is retried by the next check', async () => {
+    const state = await setupThree();
+    const edited = 'https://x.example/';
+    state.failUpdate(2);
+    await quietly(() => state.changePins([A, ['b', edited], C]));
+    assert.equal(state.tabs[1].url, ABC[1]);
+    await state.events.activated.listener({ tabId: 2 });
+    assert.equal(state.tabs[1].url, edited);
     assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
   });
 
