@@ -130,13 +130,15 @@ function makeRow() {
   return row;
 }
 
-async function setup({ urls } = {}) {
+async function setup({ urls, loadError } = {}) {
   focused = undefined;
   const ids = Object.fromEntries([
     'settings', 'pins', 'private-windows', 'private-help',
     'status', 'external-change', 'pin-limit', 'add', 'export', 'import',
   ].map((id) => [id, makeEl()]));
   ids['external-change'].hidden = true;
+  // The form starts inert, as options.html declares it.
+  ids.settings.inert = true;
   ids['pin-limit'].hidden = true;
   ids.pins.isRoot = true;
   ids['row-template'] = {
@@ -162,9 +164,12 @@ async function setup({ urls } = {}) {
     i18n: { getMessage, getUILanguage: () => 'en-US' },
     storage: {
       sync: {
-        get: async () => (
-          urls ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } } : {}
-        ),
+        get: async () => {
+          if (loadError) throw loadError;
+          return urls
+            ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } }
+            : {};
+        },
         set: () => new Promise((resolve, reject) => {
           setCalls += 1;
           pendingSet = { resolve, reject };
@@ -229,6 +234,7 @@ async function setup({ urls } = {}) {
       pendingSet.reject(new Error('Sync unavailable'));
       pendingSet = undefined;
     },
+    form: ids.settings,
     setCalls: () => setCalls,
   };
 }
@@ -252,6 +258,25 @@ test('static i18n keys resolve to messages', () => {
   ].map((match) => match[1]);
   assert.ok(keys.length >= 30);
   for (const key of keys) assert.equal(typeof getMessage(key), 'string');
+});
+
+test('a failed settings load cannot overwrite settings', async () => {
+  const state = await setup({ loadError: new Error('Sync unavailable') });
+  assert.equal(state.form.inert, true);
+  assert.equal(
+    state.status.textContent,
+    'Sync unavailable Reload this page to try again.',
+  );
+  await state.submit();
+  await state.importFile(
+    JSON.stringify({ version: 1, pins: [], privateWindows: false }),
+  );
+  assert.equal(state.setCalls(), 0);
+});
+
+test('a successful load enables the form', async () => {
+  const state = await setup({ urls: ['https://a.example/'] });
+  assert.equal(state.form.inert, false);
 });
 
 test('options page rows and reordering', async (t) => {
@@ -297,6 +322,10 @@ test('options page rows and reordering', async (t) => {
     );
     const state = await setup({ urls: many });
     assert.equal(state.pinLimit.hidden, false);
+    assert.equal(
+      state.pinLimit.textContent,
+      'More than 15 pinned tabs can slow Firefox down.',
+    );
     await state.click(state.row(0).querySelector('.remove'));
     assert.equal(state.pinLimit.hidden, true);
   });

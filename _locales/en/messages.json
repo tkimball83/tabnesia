@@ -14,7 +14,8 @@
     "message": "First enable “Run in Private Windows” for tabnesia in Firefox’s Add-ons Manager, then reopen this page."
   },
   "pinLimitWarning": {
-    "message": "More than 15 pinned tabs can slow Firefox down."
+    "message": "More than $limit$ pinned tabs can slow Firefox down.",
+    "placeholders": { "limit": { "content": "$1" } }
   },
   "save": { "message": "Save" },
   "exportBackup": { "message": "Export backup" },
@@ -25,12 +26,13 @@
   },
   "dragToReorder": { "message": "Drag to reorder" },
   "pinnedUrl": { "message": "Pinned URL" },
-  "reloadLabel": { "message": "Reload" },
+  "reloadLabel": { "message": "Auto-reload" },
   "moveUp": { "message": "Move up" },
   "moveDown": { "message": "Move down" },
   "removeUrl": { "message": "Remove URL" },
   "remove": { "message": "Remove" },
   "statusUnsaved": { "message": "Unsaved changes" },
+  "statusReloadToRetry": { "message": "Reload this page to try again." },
   "statusSaving": { "message": "Saving…" },
   "statusSaved": { "message": "Saved" },
   "statusExporting": { "message": "Exporting…" },

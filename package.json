@@ -1,0 +1,16 @@
+{
+  "name": "tabnesia",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "web-ext run",
+    "test": "node --test",
+    "lint": "eslint . && web-ext lint",
+    "build": "web-ext build --overwrite-dest",
+    "check": "npm test && npm run lint"
+  },
+  "devDependencies": {
+    "eslint": "9.39.5",
+    "web-ext": "10.7.0"
+  }
+}

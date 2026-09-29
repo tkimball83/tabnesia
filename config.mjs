@@ -32,6 +32,7 @@ export function normalizeUrls(values) {
 export function parseSettings(value) {
   if (
     !Array.isArray(value?.pins)
+    || !value.pins.every((pin) => typeof pin === 'object' && pin !== null)
     || typeof value.privateWindows !== 'boolean'
   ) {
     throw new Error(t('errorInvalidSettings'));

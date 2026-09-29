@@ -86,6 +86,10 @@ test('rejects malformed stored settings', () => {
     () => parseSettings({ pins: 'not an array', privateWindows: false }),
     /Invalid/,
   );
+  assert.throws(
+    () => parseSettings({ pins: [null], privateWindows: false }),
+    /Invalid tabnesia settings/,
+  );
 });
 
 test('keeps one managed tab per configured slot and releases the rest', () => {

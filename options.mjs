@@ -14,12 +14,14 @@ const status = document.querySelector('#status');
 const externalWarning = document.querySelector('#external-change');
 const pinLimit = document.querySelector('#pin-limit');
 const PIN_LIMIT = 15;
-const t = (key) => browser.i18n.getMessage(key);
+const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
 let dragged;
 let draggedFrom;
 let dropped;
 let lastSaved;
 let changeEpoch = 0;
+// Until settings load, the form is empty; saving it would erase them.
+let loaded = false;
 let queue = Promise.resolve();
 
 function localize(root) {
@@ -33,6 +35,7 @@ function localize(root) {
 }
 localize(document);
 localize(template.content);
+pinLimit.textContent = t('pinLimitWarning', String(PIN_LIMIT));
 document.documentElement.lang = browser.i18n.getUILanguage()
   .replaceAll('_', '-');
 const dir = t('@@bidi_dir');
@@ -87,6 +90,7 @@ async function restore() {
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (!loaded) return undefined;
   const epoch = changeEpoch;
   return enqueue(async () => {
     status.textContent = t('statusSaving');
@@ -224,7 +228,7 @@ document.querySelector('#export').addEventListener('click', () => (
 
 document.querySelector('#import').addEventListener('change', (event) => {
   const [file] = event.target.files;
-  if (!file) return undefined;
+  if (!file || !loaded) return undefined;
   const epoch = changeEpoch;
   return enqueue(async () => {
     status.textContent = t('statusImporting');
@@ -260,8 +264,11 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshPrivateAccess().catch(console.error);
 });
 
-restore().catch((error) => {
-  status.textContent = error.message;
-}).finally(() => {
+// The form stays inert unless settings load: saving an empty form over
+// settings that failed to load would erase them.
+restore().then(() => {
+  loaded = true;
   form.inert = false;
+}, (error) => {
+  status.textContent = `${error.message} ${t('statusReloadToRetry')}`;
 });

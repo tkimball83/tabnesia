@@ -1,8 +1,8 @@
 # tabnesia
 
 Tabnesia maintains a fixed, ordered list of native Firefox pinned tabs.
-Managed pins return to their configured URLs when activated and are restored
-when closed, unpinned, or moved.
+Managed pins are restored when closed, unpinned, or moved, and by default
+return to their configured URLs whenever they are activated.
 
 - Firefox 142 or newer (the floor for `data_collection_permissions` on all
   Firefox platforms)
@@ -12,7 +12,9 @@ when closed, unpinned, or moved.
 ## Usage
 
 1. Open **Add-ons and themes → Extensions → Tabnesia → Preferences**.
-2. Add URLs, drag them into order, and click **Save**.
+2. Add URLs, drag them into order, and click **Save**. Each URL's ↻ toggle
+   controls auto-reload: when it is off, activating that pin leaves its
+   current page alone.
 3. For private windows, grant tabnesia **Run in Private Windows** permission,
    then enable the corresponding option in tabnesia's preferences.
 
@@ -23,14 +25,21 @@ enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
 
 ## Development
 
+Install the pinned tooling once:
+
+```sh
+npm ci
+```
+
 Launch tabnesia in a temporary Firefox profile:
 
 ```sh
-npx --yes web-ext run
+npm start
 ```
 
 Non-extension files are excluded via `ignoreFiles` in `web-ext-config.mjs`,
-which web-ext discovers automatically.
+which web-ext discovers automatically. CI fails if the package contains any
+file besides the extension's own.
 
 ### Test with existing extensions and settings
 
@@ -63,7 +72,7 @@ Reuse the clone on later runs:
 PROFILES_DIR="${HOME}/Library/Application Support/Firefox/Profiles"
 TEST_PROFILE="${PROFILES_DIR}/tabnesia"
 
-npx --yes web-ext run \
+npm start -- \
   --firefox /opt/homebrew/bin/firefox \
   --firefox-profile "${TEST_PROFILE}" \
   --keep-profile-changes
@@ -75,10 +84,12 @@ browser security and update preferences and is unsafe for a daily profile.
 ## Checks and packaging
 
 ```sh
-node --test
-npx --yes web-ext lint
-npx --yes web-ext build --overwrite-dest
+npm test         # unit tests
+npm run lint     # ESLint and web-ext lint
+npm run build    # package the extension into web-ext-artifacts/
 ```
+
+`npm run check` runs the tests and both linters.
 
 The unsigned archive is written to `web-ext-artifacts/`. Permanent installation
 in standard Firefox requires Mozilla signing.

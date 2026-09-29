@@ -1,3 +1,4 @@
+name: Test
 on:
   push:
     branches: [main]
@@ -12,6 +13,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --test
-      - run: npx --yes eslint@9 .
-      - run: npx --yes web-ext@10 lint
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+      # web-ext packages everything not in ignoreFiles; fail on anything new.
+      - name: Package contains only the extension's files
+        run: |
+          diff <(unzip -Z1 web-ext-artifacts/*.zip | grep -v '/$' | sort) - <<'FILES'
+          _locales/en/messages.json
+          background.mjs
+          config.mjs
+          icons/tabnesia.svg
+          manifest.json
+          options.css
+          options.html
+          options.mjs
+          FILES
