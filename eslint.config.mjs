@@ -28,6 +28,7 @@ export default [
         setTimeout: 'readonly',
         setImmediate: 'readonly',
         structuredClone: 'readonly',
+        crypto: 'readonly',
         Blob: 'readonly',
         globalThis: 'writable',
       },

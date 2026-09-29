@@ -25,6 +25,9 @@ async function setup({
   missingSettings = false,
   privateWindows = false,
   urls = ['https://example.com/'],
+  // Explicit pin ids; without them pins are stored id-less, as 1.0.0 did,
+  // and each URL is its pin's id.
+  ids = undefined,
   windowIncognito = false,
 } = {}) {
   const events = Object.fromEntries([
@@ -42,13 +45,25 @@ async function setup({
     'windowRemoved',
   ].map((name) => [name, event()]));
   const calls = [];
+  // `slot` gives a tab the marker of the pin at that slot; `marker` sets the
+  // raw stored value.
   const markers = new Map(initialTabs
-    .filter(({ slot }) => slot !== undefined)
-    .map(({ id, slot }) => [id, slot]));
-  const tabs = initialTabs.map(({ slot: _slot, ...tab }) => ({ ...tab }));
+    .filter(({ slot, marker }) => slot !== undefined || marker !== undefined)
+    .map(({ id, slot, marker }) => [
+      id,
+      marker ?? { id: (ids ?? urls)[Number(slot)], url: urls[Number(slot)] },
+    ]));
+  const tabs = initialTabs.map(
+    ({ slot: _slot, marker: _marker, ...tab }) => ({ ...tab }),
+  );
   let stored = missingSettings
     ? {}
-    : { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows } };
+    : {
+      settings: {
+        pins: urls.map((url, i) => ({ ...(ids && { id: ids[i] }), url, reload: true })),
+        privateWindows,
+      },
+    };
   let failNextMarker = false;
   let failedSessionReadId;
   let failedUpdateId;
@@ -214,7 +229,122 @@ async function setup({
   };
 }
 
+const ABC = ['https://a.example/', 'https://b.example/', 'https://c.example/'];
+
+// Pins a, b and c, one managed tab each (ids 1-3). `changePins` saves a new
+// list of [id, url] pairs the way the options page does.
+async function setupThree() {
+  const state = await setup({
+    urls: ABC,
+    ids: ['a', 'b', 'c'],
+    initialTabs: ABC.map((url, index) => ({
+      id: index + 1,
+      windowId: 10,
+      index,
+      pinned: true,
+      incognito: false,
+      url,
+      slot: String(index),
+    })),
+  });
+  const settingsOf = (pairs) => ({
+    pins: pairs.map(([id, url]) => ({ id, url, reload: true })),
+    privateWindows: false,
+  });
+  let previous = settingsOf([['a', ABC[0]], ['b', ABC[1]], ['c', ABC[2]]]);
+  state.changePins = (pairs) => {
+    const oldValue = previous;
+    previous = settingsOf(pairs);
+    state.setStored(previous);
+    return state.events.storage.listener({
+      settings: { oldValue, newValue: previous },
+    }, 'sync');
+  };
+  return state;
+}
+
+const [A, B, C] = [['a', ABC[0]], ['b', ABC[1]], ['c', ABC[2]]];
+
 test('background behavior', async (t) => {
+  await t.test('reordering moves tabs without reloading them', async () => {
+    const state = await setupThree();
+    await state.changePins([B, A, C]);
+    assert.deepEqual(state.calls, [['move', [2, 1, 3], { index: 0 }]]);
+  });
+
+  await t.test('removing a middle pin unpins its own tab', async () => {
+    const state = await setupThree();
+    await state.changePins([A, C]);
+    assert.deepEqual(state.calls, [
+      ['update', 2, { pinned: false }],
+      ['move', [1, 3], { index: 0 }],
+    ]);
+    assert.equal(state.tabs[1].url, ABC[1]);
+    assert.equal(state.markers.has(2), false);
+    assert.deepEqual(state.markers.get(3), { id: 'c', url: ABC[2] });
+  });
+
+  await t.test('editing a pin\'s URL navigates only its tab', async () => {
+    const state = await setupThree();
+    const edited = 'https://x.example/';
+    await state.changePins([A, ['b', edited], C]);
+    assert.deepEqual(state.calls, [
+      ['update', 2, { pinned: true, url: edited, loadReplace: true }],
+    ]);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
+  });
+
+  await t.test('adding a pin leaves the others alone', async () => {
+    const state = await setupThree();
+    const added = 'https://d.example/';
+    await state.changePins([A, B, C, ['d', added]]);
+    assert.deepEqual(state.calls, [[
+      'create',
+      { windowId: 10, url: added, active: false, pinned: true },
+    ]]);
+  });
+
+  await t.test('deleting a pin and adding another releases the old tab', async () => {
+    const state = await setupThree();
+    const added = 'https://d.example/';
+    await state.changePins([A, B, ['d', added]]);
+    assert.deepEqual(state.calls.slice(0, 2), [
+      ['update', 3, { pinned: false }],
+      ['create', { windowId: 10, url: added, active: false, pinned: true }],
+    ]);
+    assert.equal(state.tabs[2].url, ABC[2]);
+    assert.equal(state.markers.has(3), false);
+  });
+
+  await t.test('1.0.0 tabs are released and replaced after the update', async () => {
+    const urls = ['https://a.example/', 'https://b.example/'];
+    const state = await setup({
+      urls,
+      initialTabs: urls.map((url, index) => ({
+        id: index + 1,
+        windowId: 10,
+        index,
+        pinned: true,
+        incognito: false,
+        url,
+        marker: String(index),
+      })),
+    });
+    // The old tabs keep their pages, unpinned and unmanaged.
+    for (const [index, url] of urls.entries()) {
+      assert.equal(state.tabs[index].pinned, false);
+      assert.equal(state.tabs[index].url, url);
+      assert.equal(state.markers.has(index + 1), false);
+    }
+
+    const fresh = state.tabs.filter(({ pinned }) => pinned);
+    assert.deepEqual(fresh.map(({ url }) => url), urls);
+    assert.deepEqual(
+      fresh.map(({ id }) => state.markers.get(id)),
+      urls.map((url) => ({ id: url, url })),
+    );
+  });
+
   await t.test('module load reconciles after enable', async () => {
     const state = await setup({ initialTabs: [] });
     assert.deepEqual(state.bootCalls, [[
@@ -234,7 +364,7 @@ test('background behavior', async (t) => {
     try {
       const state = await setup({ bootstrapFailures: 1, initialTabs: [] });
       assert.equal(state.tabs.length, 1);
-      assert.equal(state.markers.get(1), '0');
+      assert.deepEqual(state.markers.get(1), { id: 'https://example.com/', url: 'https://example.com/' });
     } finally {
       console.error = originalError;
     }
@@ -244,7 +374,7 @@ test('background behavior', async (t) => {
     const state = await setup({ missingSettings: true });
     assert.deepEqual(state.bootCalls, []);
     assert.equal(state.tabs[0].pinned, true);
-    assert.equal(state.markers.get(1), '0');
+    assert.deepEqual(state.markers.get(1), { id: 'https://example.com/', url: 'https://example.com/' });
 
     await state.events.removed.listener(99, {
       windowId: 10,
@@ -334,34 +464,34 @@ test('background behavior', async (t) => {
   });
 
   await t.test('only URL changes reload managed tabs', async () => {
-    const state = await setup();
+    const state = await setup({ ids: ['p'] });
     state.setStored({
-      pins: [{ url: 'https://example.com/', reload: true }],
+      pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
       privateWindows: true,
     });
     await state.events.storage.listener({
       settings: {
         oldValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
+          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
           privateWindows: false,
         },
         newValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
+          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
           privateWindows: true,
         },
       },
     }, 'sync');
     assert.deepEqual(state.calls, []);
 
-    state.setStored({ pins: [{ url: 'https://example.net/', reload: true }], privateWindows: false });
+    state.setStored({ pins: [{ id: 'p', url: 'https://example.net/', reload: true }], privateWindows: false });
     await state.events.storage.listener({
       settings: {
         oldValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
+          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
           privateWindows: true,
         },
         newValue: {
-          pins: [{ url: 'https://example.net/', reload: true }],
+          pins: [{ id: 'p', url: 'https://example.net/', reload: true }],
           privateWindows: false,
         },
       },
@@ -371,6 +501,7 @@ test('background behavior', async (t) => {
       1,
       { pinned: true, url: 'https://example.net/', loadReplace: true },
     ]]);
+    assert.deepEqual(state.markers.get(1), { id: 'p', url: 'https://example.net/' });
   });
 
   await t.test('no-op storage notifications do nothing', async () => {
@@ -445,7 +576,7 @@ test('background behavior', async (t) => {
       pinned: true,
       incognito: false,
     });
-    state.markers.set(2, '0');
+    state.markers.set(2, { id: 'https://example.com/', url: 'https://example.com/' });
     await state.events.created.listener(state.tabs[1]);
     assert.deepEqual(state.calls, [[
       'update',
@@ -463,7 +594,7 @@ test('background behavior', async (t) => {
       pinned: true,
       incognito: false,
     });
-    state.markers.set(2, '0');
+    state.markers.set(2, { id: 'https://example.com/', url: 'https://example.com/' });
     state.failUpdate(2);
     const originalError = console.error;
     let reported = false;
@@ -474,7 +605,7 @@ test('background behavior', async (t) => {
       console.error = originalError;
     }
     assert.equal(reported, true);
-    assert.equal(state.markers.get(2), '0');
+    assert.deepEqual(state.markers.get(2), { id: 'https://example.com/', url: 'https://example.com/' });
   });
 
   await t.test('queued work survives an earlier failure', async () => {
@@ -486,7 +617,7 @@ test('background behavior', async (t) => {
       pinned: true,
       incognito: false,
     });
-    state.markers.set(2, '0');
+    state.markers.set(2, { id: 'https://example.com/', url: 'https://example.com/' });
     state.failUpdate(2);
     const change = {
       settings: {

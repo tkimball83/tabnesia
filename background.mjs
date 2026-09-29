@@ -1,8 +1,8 @@
-import { findSettings, parseSlot, partitionSlots } from './config.mjs';
+import { findSettings, parseMarker, partitionSlots } from './config.mjs';
 
 const SLOT_KEY = 'tabnesiaSlot';
 const BOOTSTRAP_KEY = 'tabnesiaBootstrapped';
-const pending = new Map();
+const pending = new Set();
 const running = new Map();
 const managedIds = new Set();
 const initializedWindows = new Set();
@@ -14,7 +14,7 @@ async function release(tab) {
   managedIds.delete(tab.id);
 }
 
-async function reconcileWindow(windowId, resetUrls = false) {
+async function reconcileWindow(windowId) {
   let window;
   try {
     window = await browser.windows.get(windowId);
@@ -36,7 +36,7 @@ async function reconcileWindow(windowId, resetUrls = false) {
     try {
       return {
         tab,
-        slot: await browser.sessions.getTabValue(tab.id, SLOT_KEY),
+        marker: await browser.sessions.getTabValue(tab.id, SLOT_KEY),
       };
     } catch (error) {
       try {
@@ -47,11 +47,11 @@ async function reconcileWindow(windowId, resetUrls = false) {
       throw error;
     }
   }))).filter(Boolean);
-  tagged.forEach(({ tab, slot }) => {
-    if (slot !== undefined) managedIds.add(tab.id);
+  tagged.forEach(({ tab, marker }) => {
+    if (marker !== undefined) managedIds.add(tab.id);
   });
-  const count = shouldManage ? current.pins.length : 0;
-  const { slots, extras } = partitionSlots(tagged, count);
+  const pins = shouldManage ? current.pins : [];
+  const { slots, extras } = partitionSlots(tagged, pins);
 
   await Promise.all(extras.map(release));
   if (!shouldManage) {
@@ -59,27 +59,36 @@ async function reconcileWindow(windowId, resetUrls = false) {
     return;
   }
 
-  for (let slot = 0; slot < current.pins.length; slot += 1) {
-    let tab = slots[slot];
+  for (let slot = 0; slot < pins.length; slot += 1) {
+    const { id, url } = pins[slot];
+    let tab = slots[slot]?.tab;
     if (!tab) {
       tab = await browser.tabs.create({
         windowId,
-        url: current.pins[slot].url,
+        url,
         active: false,
         pinned: true,
       });
       try {
-        await browser.sessions.setTabValue(tab.id, SLOT_KEY, String(slot));
+        await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url });
       } catch (error) {
         await browser.tabs.remove(tab.id).catch(console.error);
         throw error;
       }
       managedIds.add(tab.id);
-    } else if (!tab.pinned || resetUrls) {
-      tab = await browser.tabs.update(tab.id, {
-        pinned: true,
-        ...(resetUrls && { url: current.pins[slot].url, loadReplace: true }),
-      });
+    } else {
+      // Only a pin whose URL was edited navigates its tab; tabs that merely
+      // moved keep their page.
+      const navigate = slots[slot].marker.url !== url;
+      if (!tab.pinned || navigate) {
+        tab = await browser.tabs.update(tab.id, {
+          pinned: true,
+          ...(navigate && { url, loadReplace: true }),
+        });
+      }
+      if (navigate) {
+        await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url });
+      }
     }
     slots[slot] = tab;
   }
@@ -99,15 +108,14 @@ async function reconcileWindow(windowId, resetUrls = false) {
   initializedWindows.add(windowId);
 }
 
-function schedule(windowId, resetUrls = false) {
-  pending.set(windowId, pending.get(windowId) === true || resetUrls);
+function schedule(windowId) {
+  pending.add(windowId);
   if (running.has(windowId)) return running.get(windowId);
 
   const task = (async () => {
     while (pending.has(windowId)) {
-      const reset = pending.get(windowId);
       pending.delete(windowId);
-      await reconcileWindow(windowId, reset);
+      await reconcileWindow(windowId);
     }
   })().finally(() => {
     running.delete(windowId);
@@ -118,20 +126,25 @@ function schedule(windowId, resetUrls = false) {
   return task;
 }
 
-async function reconcileAll(resetUrls = false) {
+async function reconcileAll() {
   const windows = await browser.windows.getAll({ windowTypes: ['normal'] });
-  await Promise.all(windows.map((window) => schedule(window.id, resetUrls)));
+  await Promise.all(windows.map((window) => schedule(window.id)));
 }
 
 browser.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await browser.tabs.get(tabId);
     if (!tab.pinned) return;
-    const marker = await browser.sessions.getTabValue(tabId, SLOT_KEY);
-    const slot = parseSlot(marker);
-    if (slot < 0) return;
+    const marker = parseMarker(
+      await browser.sessions.getTabValue(tabId, SLOT_KEY),
+    );
+    if (!marker) return;
     const current = await findSettings(browser.storage);
-    const pin = current?.pins[slot];
+    // A pin whose URL no longer matches the tab has a check queued to
+    // navigate it; reloading the old URL here would only be undone.
+    const pin = current?.pins.find(({ id, url }) => (
+      id === marker.id && url === marker.url
+    ));
     if (!pin || pin.reload === false) return;
     if (tab.incognito && (
       !current.privateWindows
@@ -202,16 +215,22 @@ function changed(change) {
 browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync' || !changes.settings) return undefined;
   const { oldValue, newValue } = changes.settings;
-  const urlsChanged = changed({
-    oldValue: Array.isArray(oldValue?.pins) ? oldValue.pins.map((p) => p.url) : undefined,
-    newValue: Array.isArray(newValue?.pins) ? newValue.pins.map((p) => p.url) : undefined,
+  // Ids default to URLs, as in parseSettings.
+  const pinsOf = (value) => (
+    Array.isArray(value?.pins)
+      ? value.pins.map((p) => [p?.id || p?.url, p?.url])
+      : undefined
+  );
+  const pinsChanged = changed({
+    oldValue: pinsOf(oldValue),
+    newValue: pinsOf(newValue),
   });
   const privateChanged = changed({
     oldValue: oldValue?.privateWindows,
     newValue: newValue?.privateWindows,
   });
-  if (urlsChanged || privateChanged) {
-    return reconcileAll(urlsChanged).catch(console.error);
+  if (pinsChanged || privateChanged) {
+    return reconcileAll().catch(console.error);
   }
   return undefined;
 });

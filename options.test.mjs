@@ -18,6 +18,7 @@ function makeEl(className = '') {
     checked: false,
     textContent: '',
     value: '',
+    dataset: {},
     offsetHeight: 10,
     listeners: {},
     classList: {
@@ -158,6 +159,7 @@ async function setup({ urls, loadError } = {}) {
 
   let pendingSet;
   let setCalls = 0;
+  let lastSet;
   let storageListener;
   globalThis.browser = {
     extension: { isAllowedIncognitoAccess: async () => true },
@@ -170,8 +172,9 @@ async function setup({ urls, loadError } = {}) {
             ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } }
             : {};
         },
-        set: () => new Promise((resolve, reject) => {
+        set: (value) => new Promise((resolve, reject) => {
           setCalls += 1;
+          lastSet = value;
           pendingSet = { resolve, reject };
         }),
       },
@@ -236,6 +239,7 @@ async function setup({ urls, loadError } = {}) {
     },
     form: ids.settings,
     setCalls: () => setCalls,
+    lastSet: () => lastSet,
   };
 }
 
@@ -313,6 +317,26 @@ test('options page rows and reordering', async (t) => {
     await state.click(state.row(0).querySelector('.remove'));
     assert.deepEqual(state.urls(), []);
     assert.equal(state.focused(), state.add);
+  });
+
+  await t.test('edits keep a row\'s pin id and new rows get their own', async () => {
+    const state = await setup({ urls: THREE });
+    state.row(1).querySelector('.url').value = 'https://edited.example/';
+    await state.click(state.row(2).querySelector('.remove'));
+    await state.add.dispatch('click');
+    state.row(2).querySelector('.url').value = 'https://added.example/';
+    const saving = state.submit();
+    state.finishSet();
+    await saving;
+
+    const [first, edited, added] = state.lastSet().settings.pins;
+    // 1.0.0 pins have their URL as id, which storage leaves out.
+    assert.deepEqual(first, { url: THREE[0], reload: true });
+    assert.deepEqual(
+      { id: edited.id, url: edited.url },
+      { id: THREE[1], url: 'https://edited.example/' },
+    );
+    assert.match(added.id, /^[0-9a-f]{8}$/);
   });
 
   await t.test('a soft warning appears past 15 pins', async () => {

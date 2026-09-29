@@ -18,7 +18,9 @@ return to their configured URLs whenever they are activated.
 3. For private windows, grant tabnesia **Run in Private Windows** permission,
    then enable the corresponding option in tabnesia's preferences.
 
-Removing a URL from the list unpins its tab without closing it.
+Removing a URL from the list unpins its tab without closing it. Reordering
+moves tabs without reloading them, and editing a URL loads the new address in
+its existing tab.
 
 Firefox sync can restore settings to other desktop profiles when add-on sync is
 enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
