@@ -6,5 +6,9 @@ export default {
     'i18n-mock.mjs',
     'README.md',
     'web-ext-config.mjs',
+    'eslint.config.mjs',
+    'package.json',
+    'package-lock.json',
+    'e2e',
   ],
 };

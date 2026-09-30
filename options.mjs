@@ -1,8 +1,11 @@
 import {
+  InvalidSettingsError,
   loadSettings,
+  newPinId,
   parseBackup,
   parseSettings,
   saveSettings,
+  serializeSettings,
 } from './config.mjs';
 
 const form = document.querySelector('#settings');
@@ -14,12 +17,14 @@ const status = document.querySelector('#status');
 const externalWarning = document.querySelector('#external-change');
 const pinLimit = document.querySelector('#pin-limit');
 const PIN_LIMIT = 15;
-const t = (key) => browser.i18n.getMessage(key);
+const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
 let dragged;
 let draggedFrom;
 let dropped;
 let lastSaved;
 let changeEpoch = 0;
+// Until settings load, the form is empty; saving it would erase them.
+let loaded = false;
 let queue = Promise.resolve();
 
 function localize(root) {
@@ -33,6 +38,7 @@ function localize(root) {
 }
 localize(document);
 localize(template.content);
+pinLimit.textContent = t('pinLimitWarning', String(PIN_LIMIT));
 document.documentElement.lang = browser.i18n.getUILanguage()
   .replaceAll('_', '-');
 const dir = t('@@bidi_dir');
@@ -53,8 +59,13 @@ function updateButtons() {
   pinLimit.hidden = rows.length <= PIN_LIMIT;
 }
 
-function addRow(url = '', reload = true) {
+// Each row keeps its pin's id, so editing a URL updates that pin's tab in
+// place, while removing a row and adding another releases the old tab.
+function addRow(url = '', reload = true, id = undefined) {
   const row = template.content.firstElementChild.cloneNode(true);
+  row.dataset.id = id ?? newPinId(
+    new Set([...list.children].map((existing) => existing.dataset.id)),
+  );
   row.querySelector('.url').value = url;
   row.querySelector('.reload').setAttribute('aria-pressed', String(reload));
   list.append(row);
@@ -63,7 +74,7 @@ function addRow(url = '', reload = true) {
 
 function render(pins) {
   list.replaceChildren();
-  pins.forEach((pin) => addRow(pin.url, pin.reload !== false));
+  pins.forEach((pin) => addRow(pin.url, pin.reload !== false, pin.id));
   updateButtons();
 }
 
@@ -78,31 +89,44 @@ async function refreshPrivateAccess() {
 }
 
 async function restore() {
-  const current = await loadSettings(browser.storage);
+  let current;
+  let invalid = false;
+  try {
+    current = await loadSettings(browser.storage);
+  } catch (error) {
+    // Settings that cannot be used start the form empty, so saving or
+    // importing can replace them. A failed read is thrown on: saving then
+    // could erase settings that are fine.
+    if (!(error instanceof InvalidSettingsError)) throw error;
+    current = { pins: [], privateWindows: false };
+    invalid = true;
+  }
   render(current.pins);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
-  status.textContent = '';
+  status.textContent = invalid ? t('statusInvalidSettings') : '';
 }
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (!loaded) return undefined;
   const epoch = changeEpoch;
   return enqueue(async () => {
     status.textContent = t('statusSaving');
     form.inert = true;
     const previousSaved = lastSaved;
     try {
-      const urls = [...list.querySelectorAll('.url')];
-      const reloads = [...list.querySelectorAll('.reload')];
       const current = parseSettings({
-        pins: urls.map((input, i) => ({
-          url: input.value,
-          reload: reloads[i].getAttribute('aria-pressed') === 'true',
+        pins: [...list.children].map((row) => ({
+          id: row.dataset.id,
+          url: row.querySelector('.url').value,
+          reload: row.querySelector('.reload')
+            .getAttribute('aria-pressed') === 'true',
         })),
         privateWindows: privateWindows.checked,
       });
-      lastSaved = JSON.stringify(current);
+      // Storage echoes the stored form, so fingerprint that.
+      lastSaved = JSON.stringify(serializeSettings(current));
       await saveSettings(browser.storage, current);
       render(current.pins);
       status.textContent = t('statusSaved');
@@ -203,7 +227,7 @@ document.querySelector('#export').addEventListener('click', () => (
     try {
       const current = await loadSettings(browser.storage);
       const blob = new Blob(
-        [JSON.stringify({ version: 1, ...current }, null, 2)],
+        [JSON.stringify({ version: 1, ...serializeSettings(current) }, null, 2)],
         { type: 'application/json' },
       );
       const href = URL.createObjectURL(blob);
@@ -224,7 +248,7 @@ document.querySelector('#export').addEventListener('click', () => (
 
 document.querySelector('#import').addEventListener('change', (event) => {
   const [file] = event.target.files;
-  if (!file) return undefined;
+  if (!file || !loaded) return undefined;
   const epoch = changeEpoch;
   return enqueue(async () => {
     status.textContent = t('statusImporting');
@@ -232,7 +256,7 @@ document.querySelector('#import').addEventListener('change', (event) => {
     const previousSaved = lastSaved;
     try {
       const imported = parseBackup(await file.text());
-      lastSaved = JSON.stringify(imported);
+      lastSaved = JSON.stringify(serializeSettings(imported));
       await saveSettings(browser.storage, imported);
       render(imported.pins);
       privateWindows.checked = imported.privateWindows;
@@ -260,8 +284,11 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshPrivateAccess().catch(console.error);
 });
 
-restore().catch((error) => {
-  status.textContent = error.message;
-}).finally(() => {
+// The form stays inert unless settings load: saving an empty form over
+// settings that failed to load would erase them.
+restore().then(() => {
+  loaded = true;
   form.inert = false;
+}, (error) => {
+  status.textContent = `${error.message} ${t('statusReloadToRetry')}`;
 });

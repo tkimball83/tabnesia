@@ -18,6 +18,7 @@ function makeEl(className = '') {
     checked: false,
     textContent: '',
     value: '',
+    dataset: {},
     offsetHeight: 10,
     listeners: {},
     classList: {
@@ -130,13 +131,15 @@ function makeRow() {
   return row;
 }
 
-async function setup({ urls } = {}) {
+async function setup({ urls, loadError, rawSettings } = {}) {
   focused = undefined;
   const ids = Object.fromEntries([
     'settings', 'pins', 'private-windows', 'private-help',
     'status', 'external-change', 'pin-limit', 'add', 'export', 'import',
   ].map((id) => [id, makeEl()]));
   ids['external-change'].hidden = true;
+  // The form starts inert, as options.html declares it.
+  ids.settings.inert = true;
   ids['pin-limit'].hidden = true;
   ids.pins.isRoot = true;
   ids['row-template'] = {
@@ -156,17 +159,23 @@ async function setup({ urls } = {}) {
 
   let pendingSet;
   let setCalls = 0;
+  let lastSet;
   let storageListener;
   globalThis.browser = {
     extension: { isAllowedIncognitoAccess: async () => true },
     i18n: { getMessage, getUILanguage: () => 'en-US' },
     storage: {
       sync: {
-        get: async () => (
-          urls ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } } : {}
-        ),
-        set: () => new Promise((resolve, reject) => {
+        get: async () => {
+          if (loadError) throw loadError;
+          if (rawSettings !== undefined) return { settings: rawSettings };
+          return urls
+            ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } }
+            : {};
+        },
+        set: (value) => new Promise((resolve, reject) => {
           setCalls += 1;
+          lastSet = value;
           pendingSet = { resolve, reject };
         }),
       },
@@ -229,7 +238,9 @@ async function setup({ urls } = {}) {
       pendingSet.reject(new Error('Sync unavailable'));
       pendingSet = undefined;
     },
+    form: ids.settings,
     setCalls: () => setCalls,
+    lastSet: () => lastSet,
   };
 }
 
@@ -252,6 +263,49 @@ test('static i18n keys resolve to messages', () => {
   ].map((match) => match[1]);
   assert.ok(keys.length >= 30);
   for (const key of keys) assert.equal(typeof getMessage(key), 'string');
+});
+
+test('a failed settings load cannot overwrite settings', async () => {
+  const state = await setup({ loadError: new Error('Sync unavailable') });
+  assert.equal(state.form.inert, true);
+  assert.equal(
+    state.status.textContent,
+    'Sync unavailable Reload this page to try again.',
+  );
+  await state.submit();
+  await state.importFile(
+    JSON.stringify({ version: 1, pins: [], privateWindows: false }),
+  );
+  assert.equal(state.setCalls(), 0);
+});
+
+test('invalid saved settings can be replaced', async () => {
+  const state = await setup({
+    rawSettings: {
+      pins: [
+        { id: 'same', url: 'https://a.example/' },
+        { id: 'same', url: 'https://b.example/' },
+      ],
+      privateWindows: false,
+    },
+  });
+  assert.equal(state.form.inert, false);
+  assert.equal(
+    state.status.textContent,
+    'The saved settings are invalid. Saving or importing replaces them.',
+  );
+  assert.deepEqual(state.urls(), []);
+  const saving = state.submit();
+  state.finishSet();
+  await saving;
+  assert.deepEqual(state.lastSet(), {
+    settings: { pins: [], privateWindows: false },
+  });
+});
+
+test('a successful load enables the form', async () => {
+  const state = await setup({ urls: ['https://a.example/'] });
+  assert.equal(state.form.inert, false);
 });
 
 test('options page rows and reordering', async (t) => {
@@ -290,6 +344,26 @@ test('options page rows and reordering', async (t) => {
     assert.equal(state.focused(), state.add);
   });
 
+  await t.test('edits keep a row\'s pin id and new rows get their own', async () => {
+    const state = await setup({ urls: THREE });
+    state.row(1).querySelector('.url').value = 'https://edited.example/';
+    await state.click(state.row(2).querySelector('.remove'));
+    await state.add.dispatch('click');
+    state.row(2).querySelector('.url').value = 'https://added.example/';
+    const saving = state.submit();
+    state.finishSet();
+    await saving;
+
+    const [first, edited, added] = state.lastSet().settings.pins;
+    // 1.0.0 pins have their URL as id, which storage leaves out.
+    assert.deepEqual(first, { url: THREE[0], reload: true });
+    assert.deepEqual(
+      { id: edited.id, url: edited.url },
+      { id: THREE[1], url: 'https://edited.example/' },
+    );
+    assert.match(added.id, /^[0-9a-f]{8}$/);
+  });
+
   await t.test('a soft warning appears past 15 pins', async () => {
     const many = Array.from(
       { length: 16 },
@@ -297,6 +371,10 @@ test('options page rows and reordering', async (t) => {
     );
     const state = await setup({ urls: many });
     assert.equal(state.pinLimit.hidden, false);
+    assert.equal(
+      state.pinLimit.textContent,
+      'More than 15 pinned tabs can slow Firefox down.',
+    );
     await state.click(state.row(0).querySelector('.remove'));
     assert.equal(state.pinLimit.hidden, true);
   });

@@ -1,6 +1,6 @@
 const DEFAULT_SETTINGS = { pins: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
-const SETTINGS_KEY = 'settings';
+export const SETTINGS_KEY = 'settings';
 
 const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
 
@@ -32,37 +32,71 @@ export function normalizeUrls(values) {
 export function parseSettings(value) {
   if (
     !Array.isArray(value?.pins)
+    || !value.pins.every((pin) => typeof pin === 'object' && pin !== null)
     || typeof value.privateWindows !== 'boolean'
   ) {
     throw new Error(t('errorInvalidSettings'));
   }
 
   const urls = normalizeUrls(value.pins.map((p) => p.url));
-  const pins = urls.map((url, i) => ({
-    url,
-    reload: value.pins[i].reload !== false,
-  }));
+  const ids = new Set();
+  const pins = urls.map((url, i) => {
+    // A pin's id stays with its row through edits and reordering. Pins
+    // saved by 1.0.0 have none, so their URL stands in.
+    const { id } = value.pins[i];
+    const pinId = typeof id === 'string' && id ? id : url;
+    if (ids.has(pinId)) throw new Error(t('errorInvalidSettings'));
+    ids.add(pinId);
+    return { id: pinId, url, reload: value.pins[i].reload !== false };
+  });
   return { pins, privateWindows: value.privateWindows };
+}
+
+export function newPinId(taken) {
+  let id;
+  do {
+    id = crypto.randomUUID().slice(0, 8);
+  } while (taken.has(id));
+  return id;
+}
+
+// The stored form of parsed settings. An id equal to its pin's URL is left
+// out, since parseSettings derives the same id, so settings from 1.0.0 stay
+// the size they were under Firefox sync's per-item limit.
+export function serializeSettings(settings) {
+  return {
+    pins: settings.pins.map(({ id, url, reload }) => (
+      id === url ? { url, reload } : { id, url, reload }
+    )),
+    privateWindows: settings.privateWindows,
+  };
 }
 
 export async function saveSettings(storage, value) {
   const current = parseSettings(value);
+  const stored = serializeSettings(current);
   const bytes = new TextEncoder().encode(
-    `${SETTINGS_KEY}${JSON.stringify(current)}`,
+    `${SETTINGS_KEY}${JSON.stringify(stored)}`,
   );
   if (bytes.length > SYNC_ITEM_LIMIT) {
     throw new Error(t('errorSyncLimit'));
   }
-  await storage.sync.set({ [SETTINGS_KEY]: current });
+  await storage.sync.set({ [SETTINGS_KEY]: stored });
   return current;
 }
 
+// Stored settings that were read but cannot be used, as opposed to a read
+// that failed: these can only be replaced, never recovered.
+export class InvalidSettingsError extends Error {}
+
 export async function findSettings(storage) {
   const synced = await storage.sync.get(SETTINGS_KEY);
-  if (Object.hasOwn(synced, SETTINGS_KEY)) {
+  if (!Object.hasOwn(synced, SETTINGS_KEY)) return null;
+  try {
     return parseSettings(synced[SETTINGS_KEY]);
+  } catch (error) {
+    throw new InvalidSettingsError(error.message);
   }
-  return null;
 }
 
 export async function loadSettings(storage) {
@@ -88,22 +122,33 @@ export function parseBackup(text) {
   }
 }
 
-export function parseSlot(marker) {
-  return typeof marker === 'string' && /^\d+$/.test(marker)
-    ? Number(marker)
-    : -1;
+// A managed tab's session marker names the pin it shows: { id, url }. `url`
+// is null while the tab navigates, so if navigating or recording the new URL
+// fails, the next check navigates it again. Anything else, including 1.0.0's
+// bare slot numbers, is not a marker this version understands, and its tab
+// is released.
+export function parseMarker(marker) {
+  return typeof marker?.id === 'string' && marker.id
+    && (typeof marker.url === 'string' || marker.url === null)
+    ? { id: marker.id, url: marker.url }
+    : null;
 }
 
-export function partitionSlots(taggedTabs, count) {
-  const slots = Array(count);
+// Matches managed tabs to pins by id: a tab keeps its pin wherever the pin
+// moved and whatever its URL became. Every other managed tab, including
+// duplicates and tabs of deleted pins, is released.
+export function partitionSlots(taggedTabs, pins) {
+  const slots = Array(pins.length);
   const extras = [];
 
-  for (const { tab, slot } of taggedTabs) {
-    const index = parseSlot(slot);
-    if (index >= 0 && index < count && slots[index] === undefined) {
-      slots[index] = tab;
-    } else if (slot !== undefined) {
-      extras.push(tab);
+  for (const entry of taggedTabs) {
+    if (entry.marker === undefined) continue;
+    const parsed = parseMarker(entry.marker);
+    const index = parsed ? pins.findIndex((pin) => pin.id === parsed.id) : -1;
+    if (index >= 0 && slots[index] === undefined) {
+      slots[index] = { tab: entry.tab, marker: parsed };
+    } else {
+      extras.push(entry.tab);
     }
   }
 

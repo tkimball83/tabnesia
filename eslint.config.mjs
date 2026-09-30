@@ -28,8 +28,19 @@ export default [
         setTimeout: 'readonly',
         setImmediate: 'readonly',
         structuredClone: 'readonly',
+        crypto: 'readonly',
         Blob: 'readonly',
         globalThis: 'writable',
+      },
+    },
+  },
+  {
+    files: ['e2e/**'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        window: 'readonly',
+        clearTimeout: 'readonly',
       },
     },
   },
