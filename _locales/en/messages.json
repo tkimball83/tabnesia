@@ -32,6 +32,9 @@
   "removeUrl": { "message": "Remove URL" },
   "remove": { "message": "Remove" },
   "statusUnsaved": { "message": "Unsaved changes" },
+  "statusInvalidSettings": {
+    "message": "The saved settings are invalid. Saving or importing replaces them."
+  },
   "statusReloadToRetry": { "message": "Reload this page to try again." },
   "statusSaving": { "message": "Saving…" },
   "statusSaved": { "message": "Saved" },

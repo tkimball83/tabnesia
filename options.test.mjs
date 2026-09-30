@@ -131,7 +131,7 @@ function makeRow() {
   return row;
 }
 
-async function setup({ urls, loadError } = {}) {
+async function setup({ urls, loadError, rawSettings } = {}) {
   focused = undefined;
   const ids = Object.fromEntries([
     'settings', 'pins', 'private-windows', 'private-help',
@@ -168,6 +168,7 @@ async function setup({ urls, loadError } = {}) {
       sync: {
         get: async () => {
           if (loadError) throw loadError;
+          if (rawSettings !== undefined) return { settings: rawSettings };
           return urls
             ? { settings: { pins: urls.map((url) => ({ url, reload: true })), privateWindows: false } }
             : {};
@@ -276,6 +277,30 @@ test('a failed settings load cannot overwrite settings', async () => {
     JSON.stringify({ version: 1, pins: [], privateWindows: false }),
   );
   assert.equal(state.setCalls(), 0);
+});
+
+test('invalid saved settings can be replaced', async () => {
+  const state = await setup({
+    rawSettings: {
+      pins: [
+        { id: 'same', url: 'https://a.example/' },
+        { id: 'same', url: 'https://b.example/' },
+      ],
+      privateWindows: false,
+    },
+  });
+  assert.equal(state.form.inert, false);
+  assert.equal(
+    state.status.textContent,
+    'The saved settings are invalid. Saving or importing replaces them.',
+  );
+  assert.deepEqual(state.urls(), []);
+  const saving = state.submit();
+  state.finishSet();
+  await saving;
+  assert.deepEqual(state.lastSet(), {
+    settings: { pins: [], privateWindows: false },
+  });
 });
 
 test('a successful load enables the form', async () => {

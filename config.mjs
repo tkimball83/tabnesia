@@ -1,6 +1,6 @@
 const DEFAULT_SETTINGS = { pins: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
-const SETTINGS_KEY = 'settings';
+export const SETTINGS_KEY = 'settings';
 
 const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
 
@@ -85,12 +85,18 @@ export async function saveSettings(storage, value) {
   return current;
 }
 
+// Stored settings that were read but cannot be used, as opposed to a read
+// that failed: these can only be replaced, never recovered.
+export class InvalidSettingsError extends Error {}
+
 export async function findSettings(storage) {
   const synced = await storage.sync.get(SETTINGS_KEY);
-  if (Object.hasOwn(synced, SETTINGS_KEY)) {
+  if (!Object.hasOwn(synced, SETTINGS_KEY)) return null;
+  try {
     return parseSettings(synced[SETTINGS_KEY]);
+  } catch (error) {
+    throw new InvalidSettingsError(error.message);
   }
-  return null;
 }
 
 export async function loadSettings(storage) {

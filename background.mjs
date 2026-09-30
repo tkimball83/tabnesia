@@ -1,4 +1,5 @@
 import {
+  SETTINGS_KEY,
   findSettings,
   loadSettings,
   parseMarker,
@@ -7,8 +8,8 @@ import {
 
 const SLOT_KEY = 'tabnesiaSlot';
 const BOOTSTRAP_KEY = 'tabnesiaBootstrapped';
-// Every window is checked this often, so whatever made an earlier check
-// fail, the next one repairs it.
+// Every window is checked this often while there is anything to manage, so
+// whatever made an earlier check fail, the next one repairs it.
 const CHECK_ALARM = 'tabnesiaCheck';
 const CHECK_PERIOD_MINUTES = 1;
 // Set in storage.local while the settings are cleared, so every check,
@@ -289,7 +290,7 @@ browser.storage.onChanged.addListener((changes, area) => {
   });
   if (pinsChanged || privateChanged) {
     return recordCleared(newValue === undefined)
-      .then(() => reconcileAll(newValue === undefined))
+      .then(() => checkAll(newValue === undefined))
       .catch(console.error);
   }
   return undefined;
@@ -306,17 +307,49 @@ async function recordCleared(cleared) {
     console.error(error);
   }
 }
+
+// Checks every window, then keeps the periodic check running only while
+// there is anything to manage, even when this check failed (the periodic
+// one is what retries it).
+async function checkAll(cleared = false) {
+  let checked = false;
+  try {
+    await reconcileAll(cleared);
+    checked = true;
+  } finally {
+    await syncAlarm(checked).catch(console.error);
+  }
+}
+
+// Anything to manage means saved settings, or a clearing whose release has
+// not finished. A successful check of every window finishes a clearing, so
+// its record goes. The alarm is created only when missing: re-creating it
+// would restart its timer.
+async function syncAlarm(checked) {
+  const [{ [SETTINGS_KEY]: settings }, { [CLEARED_KEY]: wasCleared }] = (
+    await Promise.all([
+      browser.storage.sync.get(SETTINGS_KEY),
+      browser.storage.local.get(CLEARED_KEY),
+    ])
+  );
+  let cleared = wasCleared;
+  if (settings === undefined && cleared && checked) {
+    await browser.storage.local.remove(CLEARED_KEY);
+    cleared = false;
+  }
+  if (settings === undefined && !cleared) {
+    await browser.alarms.clear(CHECK_ALARM);
+  } else if (!await browser.alarms.get(CHECK_ALARM)) {
+    await browser.alarms.create(CHECK_ALARM, {
+      periodInMinutes: CHECK_PERIOD_MINUTES,
+    });
+  }
+}
+
 browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === CHECK_ALARM) return reconcileAll().catch(console.error);
+  if (alarm.name === CHECK_ALARM) return checkAll().catch(console.error);
   return undefined;
 });
-// Created only when missing: re-creating it on every wake of this script
-// would restart its timer, and frequent wakes could keep it from firing.
-browser.alarms.get(CHECK_ALARM).then((alarm) => (
-  alarm ?? browser.alarms.create(CHECK_ALARM, {
-    periodInMinutes: CHECK_PERIOD_MINUTES,
-  })
-)).catch(console.error);
 
 browser.action.onClicked.addListener(() => {
   browser.runtime.openOptionsPage();
@@ -333,7 +366,7 @@ function bootstrap() {
   bootstrapTask ??= (async () => {
     const state = await browser.storage.session.get(BOOTSTRAP_KEY);
     if (state[BOOTSTRAP_KEY]) return;
-    await reconcileAll();
+    await checkAll();
     await browser.storage.session.set({ [BOOTSTRAP_KEY]: true });
   })().catch((error) => {
     bootstrapTask = undefined;

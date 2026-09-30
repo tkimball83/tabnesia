@@ -1,4 +1,5 @@
 import {
+  InvalidSettingsError,
   loadSettings,
   newPinId,
   parseBackup,
@@ -88,11 +89,22 @@ async function refreshPrivateAccess() {
 }
 
 async function restore() {
-  const current = await loadSettings(browser.storage);
+  let current;
+  let invalid = false;
+  try {
+    current = await loadSettings(browser.storage);
+  } catch (error) {
+    // Settings that cannot be used start the form empty, so saving or
+    // importing can replace them. A failed read is thrown on: saving then
+    // could erase settings that are fine.
+    if (!(error instanceof InvalidSettingsError)) throw error;
+    current = { pins: [], privateWindows: false };
+    invalid = true;
+  }
   render(current.pins);
   privateWindows.checked = current.privateWindows;
   await refreshPrivateAccess();
-  status.textContent = '';
+  status.textContent = invalid ? t('statusInvalidSettings') : '';
 }
 
 form.addEventListener('submit', (event) => {

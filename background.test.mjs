@@ -91,6 +91,7 @@ async function setup({
         alarms.set(name, info);
       },
       get: async (name) => alarms.get(name),
+      clear: async (name) => alarms.delete(name),
       onAlarm: events.alarm,
     },
     runtime: {
@@ -504,11 +505,53 @@ test('background behavior', async (t) => {
       },
     }, 'sync'));
     assert.equal(state.tabs[0].pinned, true);
-    // Even after the background script restarts, the next tick releases them.
+    // The periodic check keeps running to retry the release...
+    assert.equal(state.alarms.has('tabnesiaCheck'), true);
+    // ...which, even after the background script restarts, completes it.
     await state.wakeBackground();
     await state.tick();
     assert.deepEqual(state.tabs.map(({ pinned }) => pinned), [false, false, false]);
     assert.equal(state.markers.size, 0);
+    // Then nothing is left to manage.
+    assert.equal(state.alarms.has('tabnesiaCheck'), false);
+  });
+
+  await t.test('the periodic check runs only while there is anything to manage', async () => {
+    const state = await setup({ missingSettings: true, initialTabs: [] });
+    assert.equal(state.alarms.has('tabnesiaCheck'), false);
+
+    const pins = [{ url: 'https://example.com/', reload: true }];
+    state.setStored({ pins, privateWindows: false });
+    await state.events.storage.listener({
+      settings: { newValue: { pins, privateWindows: false } },
+    }, 'sync');
+    assert.equal(state.alarms.has('tabnesiaCheck'), true);
+
+    state.setStored(undefined);
+    await state.events.storage.listener({
+      settings: { oldValue: { pins, privateWindows: false } },
+    }, 'sync');
+    assert.equal(state.tabs[0].pinned, false);
+    assert.equal(state.alarms.has('tabnesiaCheck'), false);
+  });
+
+  await t.test('a failed startup check still starts the periodic check', async () => {
+    const state = await setupThree();
+    const { windows, storage } = globalThis.browser;
+    state.alarms.clear();
+    // A later startup, whose check fails.
+    await storage.session.set({ tabnesiaBootstrapped: false });
+    const { getAll } = windows;
+    windows.getAll = async () => {
+      throw new Error('Lookup failed');
+    };
+    try {
+      await quietly(() => state.wakeBackground());
+      await settle();
+    } finally {
+      windows.getAll = getAll;
+    }
+    assert.equal(state.alarms.has('tabnesiaCheck'), true);
   });
 
   await t.test('saving settings again ends the cleared state', async () => {

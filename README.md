@@ -22,8 +22,8 @@ Removing a URL from the list unpins its tab without closing it. Reordering
 moves tabs without reloading them, and editing a URL loads the new address in
 its existing tab.
 
-Tabnesia also checks every window once a minute and repairs any pin a
-failed update left wrong. Pins that are already correct are left untouched;
+While pins are configured, tabnesia also checks every window once a minute
+and repairs any pin a failed update left wrong. Pins that are already correct are left untouched;
 pages reload only when you activate a pin with auto-reload on.
 
 Firefox sync can restore settings to other desktop profiles when add-on sync is
