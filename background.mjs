@@ -11,6 +11,9 @@ const BOOTSTRAP_KEY = 'tabnesiaBootstrapped';
 // fail, the next one repairs it.
 const CHECK_ALARM = 'tabnesiaCheck';
 const CHECK_PERIOD_MINUTES = 1;
+// Set in storage.local while the settings are cleared, so every check,
+// including the periodic one after a failure, releases the managed tabs.
+const CLEARED_KEY = 'tabnesiaCleared';
 // Pending checks by window; true when the settings were just cleared.
 const pending = new Map();
 const locks = new Map();
@@ -36,11 +39,15 @@ async function reconcileWindow(windowId, cleared) {
     return;
   }
   if (window.type !== 'normal') return;
-  // Missing settings mean "not configured yet" unless they were just
-  // cleared, in which case managed tabs are released.
-  const current = cleared
-    ? await loadSettings(browser.storage)
-    : await findSettings(browser.storage);
+  // Missing settings mean "not configured yet" (so a startup before they
+  // load changes nothing) unless they were cleared, in which case managed
+  // tabs are released.
+  let current = await findSettings(browser.storage);
+  if (!current && (cleared || (
+    await browser.storage.local.get(CLEARED_KEY)
+  )[CLEARED_KEY])) {
+    current = await loadSettings(browser.storage);
+  }
   if (!current) {
     initializedWindows.add(windowId);
     return;
@@ -281,10 +288,24 @@ browser.storage.onChanged.addListener((changes, area) => {
     newValue: newValue?.privateWindows,
   });
   if (pinsChanged || privateChanged) {
-    return reconcileAll(newValue === undefined).catch(console.error);
+    return recordCleared(newValue === undefined)
+      .then(() => reconcileAll(newValue === undefined))
+      .catch(console.error);
   }
   return undefined;
 });
+
+// Records whether the settings are cleared. If that fails, the check that
+// follows still knows (it is told directly); only if it fails too do the
+// managed tabs wait for the settings to be cleared or saved again.
+async function recordCleared(cleared) {
+  try {
+    if (cleared) await browser.storage.local.set({ [CLEARED_KEY]: true });
+    else await browser.storage.local.remove(CLEARED_KEY);
+  } catch (error) {
+    console.error(error);
+  }
+}
 browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_ALARM) return reconcileAll().catch(console.error);
   return undefined;

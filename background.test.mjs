@@ -75,6 +75,7 @@ async function setup({
   let syncReads = 0;
   let bootstrapReads = 0;
   const sessionStorage = {};
+  const localStorage = {};
 
   globalThis.browser = {
     extension: {
@@ -143,6 +144,11 @@ async function setup({
           return { [key]: sessionStorage[key] };
         },
         set: async (value) => Object.assign(sessionStorage, value),
+      },
+      local: {
+        get: async (key) => ({ [key]: localStorage[key] }),
+        set: async (value) => Object.assign(localStorage, value),
+        remove: async (key) => { delete localStorage[key]; },
       },
       onChanged: events.storage,
     },
@@ -483,6 +489,44 @@ test('background behavior', async (t) => {
       tabs.remove = remove;
     }
     assert.deepEqual(state.calls.map(([name]) => name), ['create', 'remove']);
+  });
+
+  await t.test('clearing the settings releases tabs even after a failed check', async () => {
+    const state = await setupThree();
+    state.setStored(undefined);
+    state.failSessionRead(1);
+    await quietly(() => state.events.storage.listener({
+      settings: {
+        oldValue: {
+          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
+          privateWindows: false,
+        },
+      },
+    }, 'sync'));
+    assert.equal(state.tabs[0].pinned, true);
+    // Even after the background script restarts, the next tick releases them.
+    await state.wakeBackground();
+    await state.tick();
+    assert.deepEqual(state.tabs.map(({ pinned }) => pinned), [false, false, false]);
+    assert.equal(state.markers.size, 0);
+  });
+
+  await t.test('saving settings again ends the cleared state', async () => {
+    const state = await setupThree();
+    const pins = [A, B, C].map(([id, url]) => ({ id, url, reload: true }));
+    state.setStored(undefined);
+    await state.events.storage.listener({
+      settings: { oldValue: { pins, privateWindows: false } },
+    }, 'sync');
+    state.setStored({ pins: pins.slice(0, 1), privateWindows: false });
+    await state.events.storage.listener({
+      settings: { newValue: { pins: pins.slice(0, 1), privateWindows: false } },
+    }, 'sync');
+    // Were the flag left behind, a later loss of settings would release tabs
+    // instead of waiting for them to load.
+    state.setStored(undefined);
+    await state.tick();
+    assert.equal(state.tabs.filter(({ pinned }) => pinned).length, 1);
   });
 
   await t.test('clearing the settings releases managed tabs', async () => {
