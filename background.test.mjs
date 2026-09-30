@@ -554,6 +554,48 @@ test('background behavior', async (t) => {
     assert.equal(state.alarms.has('tabnesiaCheck'), true);
   });
 
+  // A later startup (after an update or browser restart) with `fail` in
+  // place; the alarm left from before is gone.
+  const restartWith = async (state, fail) => {
+    state.alarms.clear();
+    await globalThis.browser.storage.session.set({ tabnesiaBootstrapped: false });
+    const restore = fail(globalThis.browser);
+    try {
+      await quietly(() => state.wakeBackground());
+      await settle();
+    } finally {
+      restore();
+    }
+  };
+
+  await t.test('failed storage reads at startup still start the periodic check', async () => {
+    const state = await setupThree();
+    await restartWith(state, (browser) => {
+      const { get } = browser.storage.local;
+      browser.storage.local.get = async () => {
+        throw new Error('Storage unavailable');
+      };
+      return () => { browser.storage.local.get = get; };
+    });
+    assert.equal(state.alarms.has('tabnesiaCheck'), true);
+  });
+
+  await t.test('a failed alarm update at startup is retried on the next start', async () => {
+    const state = await setupThree();
+    await restartWith(state, (browser) => {
+      const { create } = browser.alarms;
+      browser.alarms.create = async () => {
+        throw new Error('Alarm failed');
+      };
+      return () => { browser.alarms.create = create; };
+    });
+    assert.equal(state.alarms.has('tabnesiaCheck'), false);
+    // The startup check was not taken as done, so the next start retries it.
+    await state.wakeBackground();
+    await settle();
+    assert.equal(state.alarms.has('tabnesiaCheck'), true);
+  });
+
   await t.test('saving settings again ends the cleared state', async () => {
     const state = await setupThree();
     const pins = [A, B, C].map(([id, url]) => ({ id, url, reload: true }));

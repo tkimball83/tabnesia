@@ -310,15 +310,17 @@ async function recordCleared(cleared) {
 
 // Checks every window, then keeps the periodic check running only while
 // there is anything to manage, even when this check failed (the periodic
-// one is what retries it).
+// one is what retries it). If the alarm could not be updated, this fails
+// too, so a startup check is not taken as done and runs again.
 async function checkAll(cleared = false) {
-  let checked = false;
+  let failure;
   try {
     await reconcileAll(cleared);
-    checked = true;
-  } finally {
-    await syncAlarm(checked).catch(console.error);
+  } catch (error) {
+    failure = error;
   }
+  await syncAlarm(failure === undefined);
+  if (failure !== undefined) throw failure;
 }
 
 // Anything to manage means saved settings, or a clearing whose release has
@@ -326,18 +328,24 @@ async function checkAll(cleared = false) {
 // its record goes. The alarm is created only when missing: re-creating it
 // would restart its timer.
 async function syncAlarm(checked) {
-  const [{ [SETTINGS_KEY]: settings }, { [CLEARED_KEY]: wasCleared }] = (
-    await Promise.all([
-      browser.storage.sync.get(SETTINGS_KEY),
-      browser.storage.local.get(CLEARED_KEY),
-    ])
-  );
-  let cleared = wasCleared;
-  if (settings === undefined && cleared && checked) {
-    await browser.storage.local.remove(CLEARED_KEY);
-    cleared = false;
+  // Unable to tell, assume there is something to manage: an unneeded check
+  // is harmless, a missing one leaves tabs unrepaired.
+  let manage = true;
+  try {
+    const [{ [SETTINGS_KEY]: settings }, { [CLEARED_KEY]: cleared }] = (
+      await Promise.all([
+        browser.storage.sync.get(SETTINGS_KEY),
+        browser.storage.local.get(CLEARED_KEY),
+      ])
+    );
+    if (settings === undefined && cleared && checked) {
+      await browser.storage.local.remove(CLEARED_KEY);
+    }
+    manage = settings !== undefined || (cleared && !checked);
+  } catch (error) {
+    console.error(error);
   }
-  if (settings === undefined && !cleared) {
+  if (!manage) {
     await browser.alarms.clear(CHECK_ALARM);
   } else if (!await browser.alarms.get(CHECK_ALARM)) {
     await browser.alarms.create(CHECK_ALARM, {
