@@ -32,6 +32,7 @@ async function setup({
 } = {}) {
   const events = Object.fromEntries([
     'activated',
+    'alarm',
     'attached',
     'created',
     'detached',
@@ -45,6 +46,8 @@ async function setup({
     'windowRemoved',
   ].map((name) => [name, event()]));
   const calls = [];
+  const alarms = new Map();
+  let alarmCreations = 0;
   // `slot` gives a tab the marker of the pin at that slot; `marker` sets the
   // raw stored value.
   const markers = new Map(initialTabs
@@ -66,6 +69,7 @@ async function setup({
     };
   let markerWritesBeforeFailure = -1;
   let failedSessionReadId;
+  let syncReadGate;
   let failedUpdateId;
   let sessionReads = 0;
   let syncReads = 0;
@@ -79,6 +83,14 @@ async function setup({
     i18n: { getMessage: (key) => key },
     action: {
       onClicked: event(),
+    },
+    alarms: {
+      create: async (name, info) => {
+        alarmCreations += 1;
+        alarms.set(name, info);
+      },
+      get: async (name) => alarms.get(name),
+      onAlarm: events.alarm,
     },
     runtime: {
       onInstalled: events.installed,
@@ -109,7 +121,13 @@ async function setup({
       sync: {
         get: async () => {
           syncReads += 1;
-          return stored;
+          const value = stored;
+          if (syncReadGate) {
+            const gate = syncReadGate;
+            syncReadGate = undefined;
+            await gate;
+          }
+          return value;
         },
         set: async (value) => {
           stored = { ...stored, ...value };
@@ -219,11 +237,22 @@ async function setup({
     failUpdate(id) {
       failedUpdateId = id;
     },
+    alarms,
+    alarmCreations: () => alarmCreations,
+    // Holds the next settings read, with the value current when it started,
+    // until the returned function is called.
+    holdNextSyncRead() {
+      let release;
+      syncReadGate = new Promise((resolve) => { release = resolve; });
+      return release;
+    },
+    // Fires the periodic check, as Firefox would each period.
+    tick: () => events.alarm.listener({ name: 'tabnesiaCheck' }),
     reads() {
       return { sessionReads, syncReads };
     },
     setStored(value) {
-      stored = { settings: value };
+      stored = value === undefined ? {} : { settings: value };
     },
     async wakeBackground() {
       await loadBackground();
@@ -297,6 +326,17 @@ test('background behavior', async (t) => {
     assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
   });
 
+  await t.test('the periodic check leaves tabs that are in step alone', async () => {
+    const state = await setupThree();
+    assert.deepEqual(state.alarms.get('tabnesiaCheck'), { periodInMinutes: 1 });
+    // A restart of the background script keeps the running alarm.
+    await state.wakeBackground();
+    assert.equal(state.alarmCreations(), 1);
+    for (let tick = 0; tick < 5; tick += 1) await state.tick();
+    // No reload, navigation, move, or re-pin: nothing was out of step.
+    assert.deepEqual(state.calls, []);
+  });
+
   const quietly = async (work) => {
     const originalError = console.error;
     console.error = () => {};
@@ -306,6 +346,159 @@ test('background behavior', async (t) => {
       console.error = originalError;
     }
   };
+
+  const settle = async () => {
+    for (let turn = 0; turn < 20; turn += 1) {
+      await new Promise(setImmediate);
+    }
+  };
+
+  await t.test('the periodic check applies an edit whose check failed', async () => {
+    const state = await setupThree();
+    const edited = 'https://x.example/';
+    state.failSessionRead(1);
+    await quietly(() => state.changePins([A, ['b', edited], C]));
+    assert.equal(state.tabs[1].url, ABC[1]);
+    await state.tick();
+    assert.equal(state.tabs[1].url, edited);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
+  });
+
+  await t.test('the periodic check applies a change that reached no window', async () => {
+    const state = await setupThree();
+    const { getAll } = globalThis.browser.windows;
+    globalThis.browser.windows.getAll = async () => {
+      throw new Error('Lookup failed');
+    };
+    try {
+      await quietly(() => state.changePins([A, C]));
+    } finally {
+      globalThis.browser.windows.getAll = getAll;
+    }
+    assert.equal(state.tabs[1].pinned, true);
+    await state.tick();
+    assert.equal(state.tabs[1].pinned, false);
+    assert.equal(state.markers.has(2), false);
+  });
+
+  await t.test('a slow activation cannot undo a URL edit', async () => {
+    const state = await setupThree();
+    const edited = 'https://x.example/';
+    // The activation reads the old settings, then stalls...
+    const release = state.holdNextSyncRead();
+    const activation = state.events.activated.listener({ tabId: 2 });
+    await settle();
+    // ...while an edit that also turns auto-reload off lands.
+    const pins = [
+      { id: 'a', url: ABC[0], reload: true },
+      { id: 'b', url: edited, reload: false },
+      { id: 'c', url: ABC[2], reload: true },
+    ];
+    state.setStored({ pins, privateWindows: false });
+    const edit = state.events.storage.listener({
+      settings: {
+        oldValue: {
+          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
+          privateWindows: false,
+        },
+        newValue: { pins, privateWindows: false },
+      },
+    }, 'sync');
+    await settle();
+    release();
+    await Promise.all([activation, edit]);
+    assert.equal(state.tabs[1].url, edited);
+    assert.deepEqual(state.markers.get(2), { id: 'b', url: edited });
+  });
+
+  await t.test('a failed release waits for the others before the next check', async () => {
+    const state = await setupThree();
+    const { sessions } = globalThis.browser;
+    const { removeTabValue } = sessions;
+    let finishRelease;
+    const held = new Promise((resolve) => { finishRelease = resolve; });
+    sessions.removeTabValue = async (id, key) => {
+      if (id === 2) await held;
+      return removeTabValue(id, key);
+    };
+    try {
+      await quietly(async () => {
+        // Releasing a fails while releasing b is still in flight...
+        state.failUpdate(1);
+        const first = state.changePins([C]);
+        await settle();
+        // ...and b comes back before that release finishes.
+        const second = state.changePins([B, C]);
+        await settle();
+        finishRelease();
+        await Promise.all([first, second]);
+        await state.tick();
+      });
+    } finally {
+      sessions.removeTabValue = removeTabValue;
+    }
+    const holders = state.tabs.filter((tab) => (
+      tab.pinned && state.markers.get(tab.id)?.id === 'b'
+    ));
+    assert.equal(holders.length, 1);
+    const untracked = state.tabs.filter((tab) => (
+      tab.pinned && !state.markers.has(tab.id)
+    ));
+    assert.deepEqual(untracked, []);
+  });
+
+  await t.test('rolling back a failed creation does not loop', async () => {
+    const state = await setup({ initialTabs: [], urls: [] });
+    // A freshly started background script has no initialized windows, so
+    // any removal there would otherwise trigger another check.
+    await state.wakeBackground();
+    const { sessions, tabs } = globalThis.browser;
+    const { setTabValue } = sessions;
+    const { remove } = tabs;
+    sessions.setTabValue = async () => {
+      throw new Error('Marker write failed');
+    };
+    // Firefox fires onRemoved for tabs the extension closes.
+    tabs.remove = async (id) => {
+      await remove(id);
+      setImmediate(() => state.events.removed.listener(id, {
+        windowId: 10,
+        isWindowClosing: false,
+      }));
+    };
+    try {
+      const pins = [{ url: 'https://example.com/', reload: true }];
+      state.setStored({ pins, privateWindows: false });
+      await quietly(async () => {
+        await state.events.storage.listener({
+          settings: {
+            oldValue: { pins: [], privateWindows: false },
+            newValue: { pins, privateWindows: false },
+          },
+        }, 'sync');
+        await settle();
+      });
+    } finally {
+      sessions.setTabValue = setTabValue;
+      tabs.remove = remove;
+    }
+    assert.deepEqual(state.calls.map(([name]) => name), ['create', 'remove']);
+  });
+
+  await t.test('clearing the settings releases managed tabs', async () => {
+    const state = await setupThree();
+    state.setStored(undefined);
+    await state.events.storage.listener({
+      settings: {
+        oldValue: {
+          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
+          privateWindows: false,
+        },
+      },
+    }, 'sync');
+    assert.deepEqual(state.tabs.map(({ pinned }) => pinned), [false, false, false]);
+    assert.equal(state.markers.size, 0);
+  });
 
   await t.test('a failed marker write after navigating is recovered on click', async () => {
     const state = await setupThree();

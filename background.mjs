@@ -1,10 +1,24 @@
-import { findSettings, parseMarker, partitionSlots } from './config.mjs';
+import {
+  findSettings,
+  loadSettings,
+  parseMarker,
+  partitionSlots,
+} from './config.mjs';
 
 const SLOT_KEY = 'tabnesiaSlot';
 const BOOTSTRAP_KEY = 'tabnesiaBootstrapped';
-const pending = new Set();
+// Every window is checked this often, so whatever made an earlier check
+// fail, the next one repairs it.
+const CHECK_ALARM = 'tabnesiaCheck';
+const CHECK_PERIOD_MINUTES = 1;
+// Pending checks by window; true when the settings were just cleared.
+const pending = new Map();
+const locks = new Map();
 const running = new Map();
 const managedIds = new Set();
+// Tabs closed here to roll back a failed creation; their removal must not
+// trigger another check, or a persistent failure would loop.
+const rollbacks = new Set();
 const initializedWindows = new Set();
 let bootstrapTask;
 
@@ -14,7 +28,7 @@ async function release(tab) {
   managedIds.delete(tab.id);
 }
 
-async function reconcileWindow(windowId) {
+async function reconcileWindow(windowId, cleared) {
   let window;
   try {
     window = await browser.windows.get(windowId);
@@ -22,7 +36,11 @@ async function reconcileWindow(windowId) {
     return;
   }
   if (window.type !== 'normal') return;
-  const current = await findSettings(browser.storage);
+  // Missing settings mean "not configured yet" unless they were just
+  // cleared, in which case managed tabs are released.
+  const current = cleared
+    ? await loadSettings(browser.storage)
+    : await findSettings(browser.storage);
   if (!current) {
     initializedWindows.add(windowId);
     return;
@@ -53,7 +71,11 @@ async function reconcileWindow(windowId) {
   const pins = shouldManage ? current.pins : [];
   const { slots, extras } = partitionSlots(tagged, pins);
 
-  await Promise.all(extras.map(release));
+  // Every release finishes before this check ends or fails: one still
+  // running after the next check starts could erase a marker it writes.
+  const released = await Promise.allSettled(extras.map(release));
+  const failure = released.find(({ status }) => status === 'rejected');
+  if (failure) throw failure.reason;
   if (!shouldManage) {
     initializedWindows.add(windowId);
     return;
@@ -72,7 +94,11 @@ async function reconcileWindow(windowId) {
       try {
         await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url });
       } catch (error) {
-        await browser.tabs.remove(tab.id).catch(console.error);
+        rollbacks.add(tab.id);
+        await browser.tabs.remove(tab.id).catch((removeError) => {
+          rollbacks.delete(tab.id);
+          console.error(removeError);
+        });
         throw error;
       }
       managedIds.add(tab.id);
@@ -111,14 +137,27 @@ async function reconcileWindow(windowId) {
   initializedWindows.add(windowId);
 }
 
-function schedule(windowId) {
-  pending.add(windowId);
+// Runs `task` once every earlier operation on the window has settled, so a
+// check and an activation reload never interleave their reads and writes.
+function exclusive(windowId, task) {
+  const result = (locks.get(windowId) ?? Promise.resolve()).then(task);
+  const settled = result.catch(() => {});
+  locks.set(windowId, settled);
+  settled.then(() => {
+    if (locks.get(windowId) === settled) locks.delete(windowId);
+  });
+  return result;
+}
+
+function schedule(windowId, cleared = false) {
+  pending.set(windowId, pending.get(windowId) === true || cleared);
   if (running.has(windowId)) return running.get(windowId);
 
   const task = (async () => {
     while (pending.has(windowId)) {
+      const wasCleared = pending.get(windowId);
       pending.delete(windowId);
-      await reconcileWindow(windowId);
+      await exclusive(windowId, () => reconcileWindow(windowId, wasCleared));
     }
   })().finally(() => {
     running.delete(windowId);
@@ -129,38 +168,42 @@ function schedule(windowId) {
   return task;
 }
 
-async function reconcileAll() {
+async function reconcileAll(cleared = false) {
   const windows = await browser.windows.getAll({ windowTypes: ['normal'] });
-  await Promise.all(windows.map((window) => schedule(window.id)));
+  await Promise.all(windows.map((window) => schedule(window.id, cleared)));
+}
+
+// Reloads an activated managed tab at its pin's URL. Returns false when the
+// tab is out of step with its pin (a navigation that did not finish, or a
+// pin edited or deleted without a check since): that needs a check, which
+// navigates or releases it, not a reload of its old URL.
+async function reloadActivated(tab) {
+  const marker = parseMarker(
+    await browser.sessions.getTabValue(tab.id, SLOT_KEY),
+  );
+  if (!marker) return true;
+  const current = await findSettings(browser.storage);
+  if (!current) return true;
+  const pin = current.pins.find(({ id }) => id === marker.id);
+  if (!pin || pin.url !== marker.url) return false;
+  if (pin.reload === false) return true;
+  if (tab.incognito && (
+    !current.privateWindows
+    || !await browser.extension.isAllowedIncognitoAccess()
+  )) return true;
+  await browser.tabs.update(tab.id, { url: pin.url, loadReplace: true });
+  return true;
 }
 
 browser.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await browser.tabs.get(tabId);
     if (!tab.pinned) return;
-    const marker = parseMarker(
-      await browser.sessions.getTabValue(tabId, SLOT_KEY),
-    );
-    if (!marker) return;
-    const current = await findSettings(browser.storage);
-    if (!current) return;
-    const pin = current.pins.find(({ id }) => id === marker.id);
-    // A tab out of step with its pin (a navigation that did not finish, or a
-    // pin edited or deleted without a check since) needs a check, which
-    // navigates or releases it, not a reload of its old URL.
-    if (!pin || pin.url !== marker.url) {
-      await schedule(tab.windowId);
-      return;
-    }
-    if (pin.reload === false) return;
-    if (tab.incognito && (
-      !current.privateWindows
-      || !await browser.extension.isAllowedIncognitoAccess()
-    )) return;
-    await browser.tabs.update(tabId, {
-      url: pin.url,
-      loadReplace: true,
-    });
+    // Under the window's lock, so an edit's check cannot land between
+    // reading the settings and reloading. The check itself needs the lock,
+    // so it runs after.
+    const inStep = await exclusive(tab.windowId, () => reloadActivated(tab));
+    if (!inStep) await schedule(tab.windowId);
   } catch (error) {
     console.error(error);
   }
@@ -199,6 +242,7 @@ browser.tabs.onDetached.addListener((_tabId, info) => (
   schedule(info.oldWindowId).catch(console.error)
 ));
 browser.tabs.onRemoved.addListener((tabId, info) => {
+  if (rollbacks.delete(tabId)) return undefined;
   const wasManaged = managedIds.delete(tabId);
   if (!info.isWindowClosing
       && (wasManaged || !initializedWindows.has(info.windowId))) {
@@ -237,10 +281,22 @@ browser.storage.onChanged.addListener((changes, area) => {
     newValue: newValue?.privateWindows,
   });
   if (pinsChanged || privateChanged) {
-    return reconcileAll().catch(console.error);
+    return reconcileAll(newValue === undefined).catch(console.error);
   }
   return undefined;
 });
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CHECK_ALARM) return reconcileAll().catch(console.error);
+  return undefined;
+});
+// Created only when missing: re-creating it on every wake of this script
+// would restart its timer, and frequent wakes could keep it from firing.
+browser.alarms.get(CHECK_ALARM).then((alarm) => (
+  alarm ?? browser.alarms.create(CHECK_ALARM, {
+    periodInMinutes: CHECK_PERIOD_MINUTES,
+  })
+)).catch(console.error);
+
 browser.action.onClicked.addListener(() => {
   browser.runtime.openOptionsPage();
 });
