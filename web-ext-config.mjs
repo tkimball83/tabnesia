@@ -9,5 +9,6 @@ export default {
     'eslint.config.mjs',
     'package.json',
     'package-lock.json',
+    'e2e',
   ],
 };

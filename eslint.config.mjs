@@ -35,6 +35,16 @@ export default [
     },
   },
   {
+    files: ['e2e/**'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        window: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+  },
+  {
     ignores: ['web-ext-artifacts/'],
   },
 ];

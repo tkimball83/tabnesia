@@ -5,12 +5,14 @@
   "scripts": {
     "start": "web-ext run",
     "test": "node --test",
+    "test:firefox": "node e2e/scenarios.mjs",
     "lint": "eslint . && web-ext lint",
     "build": "web-ext build --overwrite-dest",
     "check": "npm test && npm run lint"
   },
   "devDependencies": {
     "eslint": "9.39.5",
+    "puppeteer-core": "25.12.0",
     "web-ext": "10.7.0"
   }
 }

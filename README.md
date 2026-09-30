@@ -97,5 +97,26 @@ npm run build    # package the extension into web-ext-artifacts/
 
 `npm run check` runs the tests and both linters.
 
+### Real-Firefox tests
+
+```sh
+npm run test:firefox
+```
+
+Runs the extension end to end in Firefox (about three minutes): upgrading
+from 1.0.0, configuring, reordering, removing, and editing pins,
+auto-reload, background-script suspension, the periodic check, and
+clearing the settings. Page loads are counted, so needless reloads fail.
+
+It starts a separate headless Firefox with a throwaway profile, so it
+never touches a Firefox you have running. It finds Firefox at the usual
+macOS location or on `PATH`; set `FIREFOX` to use another binary.
+`BUILD=<git revision>` tests that revision instead of the working tree, and
+`UPGRADE_FROM=<git revision>` sets where the upgrade test starts.
+
+A full browser restart is not covered: release Firefox drops unsigned
+temporary add-ons when it restarts. CI does not run these tests, since they
+need Firefox.
+
 The unsigned archive is written to `web-ext-artifacts/`. Permanent installation
 in standard Firefox requires Mozilla signing.
