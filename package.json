@@ -11,7 +11,7 @@
     "check": "npm test && npm run lint"
   },
   "devDependencies": {
-    "eslint": "9.39.5",
+    "eslint": "10.14.0",
     "puppeteer-core": "25.16.0",
     "web-ext": "10.8.0"
   },
