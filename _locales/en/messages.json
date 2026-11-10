@@ -11,7 +11,7 @@
   "addUrl": { "message": "Add URL" },
   "privateLabel": { "message": "Enable pins in Private Windows" },
   "privateHelp": {
-    "message": "First enable “Run in Private Windows” for tabnesia in Firefox’s Add-ons Manager, then reopen this page."
+    "message": "First enable “Run in Private Windows” for Tabnesia in Firefox’s Add-ons Manager, then reopen this page."
   },
   "pinLimitWarning": {
     "message": "More than $limit$ pinned tabs can slow Firefox down.",
@@ -57,12 +57,12 @@
       "url": { "content": "$2" }
     }
   },
-  "errorInvalidSettings": { "message": "Invalid tabnesia settings." },
+  "errorInvalidSettings": { "message": "Invalid Tabnesia settings." },
   "errorSyncLimit": {
     "message": "Pinned URLs exceed Firefox sync's 8 KB item limit."
   },
   "errorInvalidJson": { "message": "The selected file is not valid JSON." },
   "errorInvalidBackup": {
-    "message": "The selected file is not a tabnesia version 1 backup."
+    "message": "The selected file is not a Tabnesia version 1 backup."
   }
 }

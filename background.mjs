@@ -1,7 +1,7 @@
 import {
+  DEFAULT_SETTINGS,
   SETTINGS_KEY,
   findSettings,
-  loadSettings,
   parseMarker,
   partitionSlots,
 } from './config.mjs';
@@ -47,16 +47,16 @@ async function reconcileWindow(windowId, cleared) {
   if (!current && (cleared || (
     await browser.storage.local.get(CLEARED_KEY)
   )[CLEARED_KEY])) {
-    current = await loadSettings(browser.storage);
+    current = DEFAULT_SETTINGS;
   }
-  if (!current) {
-    initializedWindows.add(windowId);
-    return;
-  }
-  const privateAllowed = !window.incognito
-    || await browser.extension.isAllowedIncognitoAccess();
-  const shouldManage = !window.incognito
-    || (current.privateWindows && privateAllowed);
+  if (current) await applySettings(window, current);
+  initializedWindows.add(windowId);
+}
+
+async function applySettings({ id: windowId, incognito }, current) {
+  // Firefox never shows this extension a private window it may not access,
+  // and reloads it when that permission changes, so only the setting matters.
+  const shouldManage = !incognito || current.privateWindows;
   const tabs = await browser.tabs.query({ windowId });
   const tagged = (await Promise.all(tabs.map(async (tab) => {
     try {
@@ -84,14 +84,12 @@ async function reconcileWindow(windowId, cleared) {
   const released = await Promise.allSettled(extras.map(release));
   const failure = released.find(({ status }) => status === 'rejected');
   if (failure) throw failure.reason;
-  if (!shouldManage) {
-    initializedWindows.add(windowId);
-    return;
-  }
 
+  const placed = [];
   for (let slot = 0; slot < pins.length; slot += 1) {
     const { id, url } = pins[slot];
-    let tab = slots[slot]?.tab;
+    const entry = slots[slot];
+    let tab = entry?.tab;
     if (!tab) {
       tab = await browser.tabs.create({
         windowId,
@@ -113,7 +111,7 @@ async function reconcileWindow(windowId, cleared) {
     } else {
       // Only a pin whose URL was edited navigates its tab; tabs that merely
       // moved keep their page.
-      const navigate = slots[slot].marker.url !== url;
+      const navigate = entry.marker.url !== url;
       if (navigate) {
         await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url: null });
       }
@@ -127,22 +125,18 @@ async function reconcileWindow(windowId, cleared) {
         await browser.sessions.setTabValue(tab.id, SLOT_KEY, { id, url });
       }
     }
-    slots[slot] = tab;
+    placed.push(tab);
   }
 
-  if (!slots.length) {
-    initializedWindows.add(windowId);
-    return;
-  }
+  if (!placed.length) return;
   const latest = await browser.tabs.query({ windowId });
   const indexes = new Map(latest.map((tab) => [tab.id, tab.index]));
-  if (slots.some((tab, slot) => indexes.get(tab.id) !== slot)) {
+  if (placed.some((tab, slot) => indexes.get(tab.id) !== slot)) {
     // A slot tab can close between the query and the move; the next tab
     // event re-reconciles, so a failed move is safe to swallow.
-    await browser.tabs.move(slots.map((tab) => tab.id), { index: 0 })
+    await browser.tabs.move(placed.map((tab) => tab.id), { index: 0 })
       .catch(console.error);
   }
-  initializedWindows.add(windowId);
 }
 
 // Runs `task` once every earlier operation on the window has settled, so a
@@ -195,10 +189,7 @@ async function reloadActivated(tab) {
   const pin = current.pins.find(({ id }) => id === marker.id);
   if (!pin || pin.url !== marker.url) return false;
   if (pin.reload === false) return true;
-  if (tab.incognito && (
-    !current.privateWindows
-    || !await browser.extension.isAllowedIncognitoAccess()
-  )) return true;
+  if (tab.incognito && !current.privateWindows) return true;
   await browser.tabs.update(tab.id, { url: pin.url, loadReplace: true });
   return true;
 }
@@ -266,29 +257,21 @@ browser.windows.onRemoved.addListener((windowId) => {
   initializedWindows.delete(windowId);
 });
 
-function changed(change) {
-  return change
-    && JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue);
+function changed(oldValue, newValue) {
+  return JSON.stringify(oldValue) !== JSON.stringify(newValue);
 }
 
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'sync' || !changes.settings) return undefined;
-  const { oldValue, newValue } = changes.settings;
+  if (area !== 'sync' || !changes[SETTINGS_KEY]) return undefined;
+  const { oldValue, newValue } = changes[SETTINGS_KEY];
   // Ids default to URLs, as in parseSettings.
   const pinsOf = (value) => (
     Array.isArray(value?.pins)
       ? value.pins.map((p) => [p?.id || p?.url, p?.url])
       : undefined
   );
-  const pinsChanged = changed({
-    oldValue: pinsOf(oldValue),
-    newValue: pinsOf(newValue),
-  });
-  const privateChanged = changed({
-    oldValue: oldValue?.privateWindows,
-    newValue: newValue?.privateWindows,
-  });
-  if (pinsChanged || privateChanged) {
+  if (changed(pinsOf(oldValue), pinsOf(newValue))
+      || changed(oldValue?.privateWindows, newValue?.privateWindows)) {
     return recordCleared(newValue === undefined)
       .then(() => checkAll(newValue === undefined))
       .catch(console.error);
@@ -360,7 +343,7 @@ browser.alarms.onAlarm.addListener((alarm) => {
 });
 
 browser.action.onClicked.addListener(() => {
-  browser.runtime.openOptionsPage();
+  browser.runtime.openOptionsPage().catch(console.error);
 });
 
 browser.runtime.onStartup.addListener(() => (

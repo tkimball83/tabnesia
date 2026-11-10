@@ -1,10 +1,9 @@
 export default {
   ignoreFiles: [
-    'test.mjs',
-    'background.test.mjs',
-    'options.test.mjs',
+    '*.test.mjs',
     'i18n-mock.mjs',
     'README.md',
+    'LICENSE',
     'web-ext-config.mjs',
     'eslint.config.mjs',
     'package.json',

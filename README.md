@@ -22,9 +22,11 @@ Removing a URL from the list unpins its tab without closing it. Reordering
 moves tabs without reloading them, and editing a URL loads the new address in
 its existing tab.
 
-While pins are configured, tabnesia also checks every window once a minute
-and repairs any pin a failed update left wrong. Pins that are already correct are left untouched;
-pages reload only when you activate a pin with auto-reload on.
+While settings are saved, tabnesia also checks every window once a minute
+and repairs any pin a failed update left wrong. Pins that are already correct
+are left untouched; pages reload only when you activate a pin with auto-reload
+on. Firefox does not refetch a page when the pin's URL has a `#fragment` and
+the tab is already on it, so auto-reload has no effect there.
 
 Firefox sync can restore settings to other desktop profiles when add-on sync is
 enabled. Export a backup before uninstalling tabnesia or reinstalling Firefox.
@@ -97,6 +99,9 @@ npm run build    # package the extension into web-ext-artifacts/
 
 `npm run check` runs the tests and both linters.
 
+The unsigned archive is written to `web-ext-artifacts/`. Permanent installation
+in standard Firefox requires Mozilla signing.
+
 ### Real-Firefox tests
 
 ```sh
@@ -109,14 +114,11 @@ auto-reload, background-script suspension, the periodic check, and
 clearing the settings. Page loads are counted, so needless reloads fail.
 
 It starts a separate headless Firefox with a throwaway profile, so it
-never touches a Firefox you have running. It finds Firefox at the usual
-macOS location or on `PATH`; set `FIREFOX` to use another binary.
+never touches a Firefox you have running. It expects Firefox at the usual
+macOS location; anywhere else, set `FIREFOX` to the binary's full path.
 `BUILD=<git revision>` tests that revision instead of the working tree, and
 `UPGRADE_FROM=<git revision>` sets where the upgrade test starts.
 
 A full browser restart is not covered: release Firefox drops unsigned
 temporary add-ons when it restarts. CI does not run these tests, since they
 need Firefox.
-
-The unsigned archive is written to `web-ext-artifacts/`. Permanent installation
-in standard Firefox requires Mozilla signing.

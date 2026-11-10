@@ -1,5 +1,7 @@
 import {
+  DEFAULT_SETTINGS,
   InvalidSettingsError,
+  SETTINGS_KEY,
   loadSettings,
   newPinId,
   parseBackup,
@@ -16,6 +18,8 @@ const privateHelp = document.querySelector('#private-help');
 const status = document.querySelector('#status');
 const externalWarning = document.querySelector('#external-change');
 const pinLimit = document.querySelector('#pin-limit');
+const saveButton = document.querySelector('#save');
+const importInput = document.querySelector('#import');
 const PIN_LIMIT = 15;
 const t = (key, substitutions) => browser.i18n.getMessage(key, substitutions);
 let dragged;
@@ -25,6 +29,7 @@ let lastSaved;
 let changeEpoch = 0;
 // Until settings load, the form is empty; saving it would erase them.
 let loaded = false;
+let dirty = false;
 let queue = Promise.resolve();
 
 function localize(root) {
@@ -39,15 +44,24 @@ function localize(root) {
 localize(document);
 localize(template.content);
 pinLimit.textContent = t('pinLimitWarning', String(PIN_LIMIT));
-document.documentElement.lang = browser.i18n.getUILanguage()
-  .replaceAll('_', '-');
-const dir = t('@@bidi_dir');
-if (dir === 'ltr' || dir === 'rtl') document.documentElement.dir = dir;
 
 function enqueue(task) {
   const result = queue.then(task);
   queue = result.catch(() => {});
   return result;
+}
+
+// Runs an operation with the form inert. Inerting blurs whatever had focus,
+// so focus goes back to it afterwards, or to Save if a re-render removed it.
+async function whileInert(task) {
+  const focused = document.activeElement;
+  form.inert = true;
+  try {
+    await task();
+  } finally {
+    form.inert = false;
+    (focused?.isConnected ? focused : saveButton).focus();
+  }
 }
 
 function updateButtons() {
@@ -74,18 +88,18 @@ function addRow(url = '', reload = true, id = undefined) {
 
 function render(pins) {
   list.replaceChildren();
-  pins.forEach((pin) => addRow(pin.url, pin.reload !== false, pin.id));
+  pins.forEach((pin) => addRow(pin.url, pin.reload, pin.id));
   updateButtons();
 }
 
 function changed() {
+  dirty = true;
   status.textContent = t('statusUnsaved');
 }
 
-async function refreshPrivateAccess() {
-  const allowed = await browser.extension.isAllowedIncognitoAccess();
-  privateWindows.disabled = !allowed;
-  privateHelp.hidden = allowed;
+// Shows the outcome of an operation that left the form as it was.
+function report(message) {
+  status.textContent = dirty ? `${message} · ${t('statusUnsaved')}` : message;
 }
 
 async function restore() {
@@ -98,49 +112,59 @@ async function restore() {
     // importing can replace them. A failed read is thrown on: saving then
     // could erase settings that are fine.
     if (!(error instanceof InvalidSettingsError)) throw error;
-    current = { pins: [], privateWindows: false };
+    current = DEFAULT_SETTINGS;
     invalid = true;
   }
   render(current.pins);
   privateWindows.checked = current.privateWindows;
-  await refreshPrivateAccess();
+  const allowed = await browser.extension.isAllowedIncognitoAccess();
+  privateWindows.disabled = !allowed;
+  privateHelp.hidden = allowed;
   status.textContent = invalid ? t('statusInvalidSettings') : '';
+}
+
+// Saves the settings `read` returns and shows them. `epoch` is the change
+// count when the user acted: a change since then keeps its warning.
+async function persist(read, savedMessage, epoch) {
+  const previousSaved = lastSaved;
+  try {
+    const settings = await read();
+    // Storage echoes the stored form, so fingerprint that.
+    lastSaved = JSON.stringify(serializeSettings(settings));
+    await saveSettings(browser.storage, settings);
+    render(settings.pins);
+    privateWindows.checked = settings.privateWindows;
+    dirty = false;
+    status.textContent = savedMessage;
+    if (changeEpoch === epoch) externalWarning.hidden = true;
+  } catch (error) {
+    lastSaved = previousSaved;
+    report(error.message);
+  }
 }
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   if (!loaded) return undefined;
   const epoch = changeEpoch;
-  return enqueue(async () => {
+  return enqueue(() => whileInert(async () => {
     status.textContent = t('statusSaving');
-    form.inert = true;
-    const previousSaved = lastSaved;
-    try {
-      const current = parseSettings({
-        pins: [...list.children].map((row) => ({
-          id: row.dataset.id,
-          url: row.querySelector('.url').value,
-          reload: row.querySelector('.reload')
-            .getAttribute('aria-pressed') === 'true',
-        })),
-        privateWindows: privateWindows.checked,
-      });
-      // Storage echoes the stored form, so fingerprint that.
-      lastSaved = JSON.stringify(serializeSettings(current));
-      await saveSettings(browser.storage, current);
-      render(current.pins);
-      status.textContent = t('statusSaved');
-      if (changeEpoch === epoch) externalWarning.hidden = true;
-    } catch (error) {
-      lastSaved = previousSaved;
-      status.textContent = error.message;
-    } finally {
-      form.inert = false;
-    }
-  });
+    await persist(() => parseSettings({
+      pins: [...list.children].map((row) => ({
+        id: row.dataset.id,
+        url: row.querySelector('.url').value,
+        reload: row.querySelector('.reload')
+          .getAttribute('aria-pressed') === 'true',
+      })),
+      privateWindows: privateWindows.checked,
+    }), t('statusSaved'), epoch);
+  }));
 });
 
-form.addEventListener('input', changed);
+form.addEventListener('input', (event) => {
+  // Choosing a backup file is not an edit of the form.
+  if (event.target !== importInput) changed();
+});
 document.querySelector('#add').addEventListener('click', () => {
   addRow().querySelector('.url').focus();
   updateButtons();
@@ -221,9 +245,8 @@ list.addEventListener('dragend', () => {
 });
 
 document.querySelector('#export').addEventListener('click', () => (
-  enqueue(async () => {
+  enqueue(() => whileInert(async () => {
     status.textContent = t('statusExporting');
-    form.inert = true;
     try {
       const current = await loadSettings(browser.storage);
       const blob = new Blob(
@@ -237,51 +260,34 @@ document.querySelector('#export').addEventListener('click', () => (
       });
       link.click();
       setTimeout(() => URL.revokeObjectURL(href), 30_000);
-      status.textContent = t('statusExported');
+      report(t('statusExported'));
     } catch (error) {
-      status.textContent = error.message;
-    } finally {
-      form.inert = false;
+      report(error.message);
     }
-  })
+  }))
 ));
 
-document.querySelector('#import').addEventListener('change', (event) => {
+importInput.addEventListener('change', (event) => {
   const [file] = event.target.files;
   if (!file || !loaded) return undefined;
   const epoch = changeEpoch;
-  return enqueue(async () => {
+  return enqueue(() => whileInert(async () => {
     status.textContent = t('statusImporting');
-    form.inert = true;
-    const previousSaved = lastSaved;
-    try {
-      const imported = parseBackup(await file.text());
-      lastSaved = JSON.stringify(serializeSettings(imported));
-      await saveSettings(browser.storage, imported);
-      render(imported.pins);
-      privateWindows.checked = imported.privateWindows;
-      status.textContent = t('statusImported');
-      if (changeEpoch === epoch) externalWarning.hidden = true;
-    } catch (error) {
-      lastSaved = previousSaved;
-      status.textContent = error.message;
-    } finally {
-      event.target.value = '';
-      form.inert = false;
-    }
-  });
+    await persist(
+      async () => parseBackup(await file.text()),
+      t('statusImported'),
+      epoch,
+    );
+    event.target.value = '';
+  }));
 });
 
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'sync' || !changes.settings) return;
+  if (area !== 'sync' || !changes[SETTINGS_KEY]) return;
   if (lastSaved !== undefined
-      && JSON.stringify(changes.settings.newValue) === lastSaved) return;
+      && JSON.stringify(changes[SETTINGS_KEY].newValue) === lastSaved) return;
   changeEpoch += 1;
   externalWarning.hidden = false;
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshPrivateAccess().catch(console.error);
 });
 
 // The form stays inert unless settings load: saving an empty form over

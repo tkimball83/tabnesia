@@ -21,7 +21,6 @@ async function setup({
     incognito: false,
     slot: '0',
   }],
-  incognitoAllowed = false,
   missingSettings = false,
   privateWindows = false,
   urls = ['https://example.com/'],
@@ -31,6 +30,7 @@ async function setup({
   windowIncognito = false,
 } = {}) {
   const events = Object.fromEntries([
+    'actionClicked',
     'activated',
     'alarm',
     'attached',
@@ -48,6 +48,7 @@ async function setup({
   const calls = [];
   const alarms = new Map();
   let alarmCreations = 0;
+  let optionsOpenings = 0;
   // `slot` gives a tab the marker of the pin at that slot; `marker` sets the
   // raw stored value.
   const markers = new Map(initialTabs
@@ -78,12 +79,9 @@ async function setup({
   const localStorage = {};
 
   globalThis.browser = {
-    extension: {
-      isAllowedIncognitoAccess: async () => incognitoAllowed,
-    },
     i18n: { getMessage: (key) => key },
     action: {
-      onClicked: event(),
+      onClicked: events.actionClicked,
     },
     alarms: {
       create: async (name, info) => {
@@ -97,7 +95,7 @@ async function setup({
     runtime: {
       onInstalled: events.installed,
       onStartup: events.startup,
-      openOptionsPage: async () => {},
+      openOptionsPage: async () => { optionsOpenings += 1; },
     },
     sessions: {
       getTabValue: async (id) => {
@@ -157,7 +155,9 @@ async function setup({
       create: async (properties) => {
         const tab = {
           id: Math.max(0, ...tabs.map(({ id }) => id)) + 1,
-          index: tabs.length,
+          index: tabs.filter(
+            ({ windowId }) => windowId === properties.windowId,
+          ).length,
           incognito: false,
           ...properties,
         };
@@ -170,7 +170,7 @@ async function setup({
         if (!tab) throw new Error('Tab not found');
         return tab;
       },
-      move: async (ids, properties) => calls.push(['move', ids, properties]),
+      move: async (tabIds, properties) => calls.push(['move', tabIds, properties]),
       onActivated: events.activated,
       onAttached: events.attached,
       onCreated: events.created,
@@ -198,8 +198,8 @@ async function setup({
       },
     },
     windows: {
-      get: async () => ({
-        id: 10,
+      get: async (id) => ({
+        id,
         type: 'normal',
         incognito: windowIncognito,
       }),
@@ -246,6 +246,7 @@ async function setup({
     },
     alarms,
     alarmCreations: () => alarmCreations,
+    optionsOpenings: () => optionsOpenings,
     // Holds the next settings read, with the value current when it started,
     // until the returned function is called.
     holdNextSyncRead() {
@@ -255,6 +256,11 @@ async function setup({
     },
     // Fires the periodic check, as Firefox would each period.
     tick: () => events.alarm.listener({ name: 'tabnesiaCheck' }),
+    // Delivers a change to the settings, as Firefox would after a write.
+    notifyChange: (oldValue, newValue) => events.storage.listener(
+      { settings: { oldValue, newValue } },
+      'sync',
+    ),
     reads() {
       return { sessionReads, syncReads };
     },
@@ -269,6 +275,15 @@ async function setup({
 }
 
 const ABC = ['https://a.example/', 'https://b.example/', 'https://c.example/'];
+const settingsOf = (pairs) => ({
+  pins: pairs.map(([id, url]) => ({ id, url, reload: true })),
+  privateWindows: false,
+});
+// The settings `setup` stores by default, in their stored form.
+const single = (privateWindows = false) => ({
+  pins: [{ url: 'https://example.com/', reload: true }],
+  privateWindows,
+});
 
 // Pins a, b and c, one managed tab each (ids 1-3). `changePins` saves a new
 // list of [id, url] pairs the way the options page does.
@@ -286,23 +301,27 @@ async function setupThree() {
       slot: String(index),
     })),
   });
-  const settingsOf = (pairs) => ({
-    pins: pairs.map(([id, url]) => ({ id, url, reload: true })),
-    privateWindows: false,
-  });
   let previous = settingsOf([['a', ABC[0]], ['b', ABC[1]], ['c', ABC[2]]]);
   state.changePins = (pairs) => {
     const oldValue = previous;
     previous = settingsOf(pairs);
     state.setStored(previous);
-    return state.events.storage.listener({
-      settings: { oldValue, newValue: previous },
-    }, 'sync');
+    return state.notifyChange(oldValue, previous);
   };
   return state;
 }
 
 const [A, B, C] = [['a', ABC[0]], ['b', ABC[1]], ['c', ABC[2]]];
+
+async function quietly(work) {
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await work();
+  } finally {
+    console.error = originalError;
+  }
+}
 
 test('background behavior', async (t) => {
   await t.test('reordering moves tabs without reloading them', async () => {
@@ -336,23 +355,13 @@ test('background behavior', async (t) => {
   await t.test('the periodic check leaves tabs that are in step alone', async () => {
     const state = await setupThree();
     assert.deepEqual(state.alarms.get('tabnesiaCheck'), { periodInMinutes: 1 });
-    // A restart of the background script keeps the running alarm.
     await state.wakeBackground();
-    assert.equal(state.alarmCreations(), 1);
     for (let tick = 0; tick < 5; tick += 1) await state.tick();
+    // The running alarm is kept, so its timer is not restarted.
+    assert.equal(state.alarmCreations(), 1);
     // No reload, navigation, move, or re-pin: nothing was out of step.
     assert.deepEqual(state.calls, []);
   });
-
-  const quietly = async (work) => {
-    const originalError = console.error;
-    console.error = () => {};
-    try {
-      await work();
-    } finally {
-      console.error = originalError;
-    }
-  };
 
   const settle = async () => {
     for (let turn = 0; turn < 20; turn += 1) {
@@ -402,15 +411,7 @@ test('background behavior', async (t) => {
       { id: 'c', url: ABC[2], reload: true },
     ];
     state.setStored({ pins, privateWindows: false });
-    const edit = state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
-          privateWindows: false,
-        },
-        newValue: { pins, privateWindows: false },
-      },
-    }, 'sync');
+    const edit = state.notifyChange(settingsOf([A, B, C]), { pins, privateWindows: false });
     await settle();
     release();
     await Promise.all([activation, edit]);
@@ -477,12 +478,7 @@ test('background behavior', async (t) => {
       const pins = [{ url: 'https://example.com/', reload: true }];
       state.setStored({ pins, privateWindows: false });
       await quietly(async () => {
-        await state.events.storage.listener({
-          settings: {
-            oldValue: { pins: [], privateWindows: false },
-            newValue: { pins, privateWindows: false },
-          },
-        }, 'sync');
+        await state.notifyChange({ pins: [], privateWindows: false }, { pins, privateWindows: false });
         await settle();
       });
     } finally {
@@ -496,14 +492,7 @@ test('background behavior', async (t) => {
     const state = await setupThree();
     state.setStored(undefined);
     state.failSessionRead(1);
-    await quietly(() => state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
-          privateWindows: false,
-        },
-      },
-    }, 'sync'));
+    await quietly(() => state.notifyChange(settingsOf([A, B, C])));
     assert.equal(state.tabs[0].pinned, true);
     // The periodic check keeps running to retry the release...
     assert.equal(state.alarms.has('tabnesiaCheck'), true);
@@ -522,15 +511,11 @@ test('background behavior', async (t) => {
 
     const pins = [{ url: 'https://example.com/', reload: true }];
     state.setStored({ pins, privateWindows: false });
-    await state.events.storage.listener({
-      settings: { newValue: { pins, privateWindows: false } },
-    }, 'sync');
+    await state.notifyChange(undefined, { pins, privateWindows: false });
     assert.equal(state.alarms.has('tabnesiaCheck'), true);
 
     state.setStored(undefined);
-    await state.events.storage.listener({
-      settings: { oldValue: { pins, privateWindows: false } },
-    }, 'sync');
+    await state.notifyChange({ pins, privateWindows: false });
     assert.equal(state.tabs[0].pinned, false);
     assert.equal(state.alarms.has('tabnesiaCheck'), false);
   });
@@ -598,15 +583,12 @@ test('background behavior', async (t) => {
 
   await t.test('saving settings again ends the cleared state', async () => {
     const state = await setupThree();
-    const pins = [A, B, C].map(([id, url]) => ({ id, url, reload: true }));
     state.setStored(undefined);
-    await state.events.storage.listener({
-      settings: { oldValue: { pins, privateWindows: false } },
-    }, 'sync');
-    state.setStored({ pins: pins.slice(0, 1), privateWindows: false });
-    await state.events.storage.listener({
-      settings: { newValue: { pins: pins.slice(0, 1), privateWindows: false } },
-    }, 'sync');
+    // A failed check keeps the cleared flag, for the save below to remove.
+    state.failSessionRead(1);
+    await quietly(() => state.notifyChange(settingsOf([A, B, C])));
+    state.setStored(settingsOf([A]));
+    await state.notifyChange(undefined, settingsOf([A]));
     // Were the flag left behind, a later loss of settings would release tabs
     // instead of waiting for them to load.
     state.setStored(undefined);
@@ -617,14 +599,7 @@ test('background behavior', async (t) => {
   await t.test('clearing the settings releases managed tabs', async () => {
     const state = await setupThree();
     state.setStored(undefined);
-    await state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [A, B, C].map(([id, url]) => ({ id, url, reload: true })),
-          privateWindows: false,
-        },
-      },
-    }, 'sync');
+    await state.notifyChange(settingsOf([A, B, C]));
     assert.deepEqual(state.tabs.map(({ pinned }) => pinned), [false, false, false]);
     assert.equal(state.markers.size, 0);
   });
@@ -736,15 +711,11 @@ test('background behavior', async (t) => {
   });
 
   await t.test('bootstrap retries after a transient failure', async () => {
-    const originalError = console.error;
-    console.error = () => {};
-    try {
+    await quietly(async () => {
       const state = await setup({ bootstrapFailures: 1, initialTabs: [] });
       assert.equal(state.tabs.length, 1);
       assert.deepEqual(state.markers.get(1), { id: 'https://example.com/', url: 'https://example.com/' });
-    } finally {
-      console.error = originalError;
-    }
+    });
   });
 
   await t.test('missing sync data preserves managed tabs', async () => {
@@ -760,28 +731,25 @@ test('background behavior', async (t) => {
     assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
   });
 
-  await t.test('private pins require the setting and permission', async () => {
-    const allowed = await setup({
-      incognitoAllowed: true,
+  await t.test('private pins require the setting', async () => {
+    const enabled = await setup({
       initialTabs: [],
       privateWindows: true,
       windowIncognito: true,
     });
-    assert.equal(allowed.tabs.length, 1);
-    assert.equal(allowed.tabs[0].pinned, true);
+    assert.equal(enabled.tabs.length, 1);
+    assert.equal(enabled.tabs[0].pinned, true);
 
-    const denied = await setup({
-      incognitoAllowed: false,
+    const disabled = await setup({
       initialTabs: [],
-      privateWindows: true,
+      privateWindows: false,
       windowIncognito: true,
     });
-    assert.deepEqual(denied.tabs, []);
+    assert.deepEqual(disabled.tabs, []);
   });
 
   await t.test('disabling private pins releases managed tabs', async () => {
     const state = await setup({
-      incognitoAllowed: true,
       initialTabs: [{
         id: 1,
         windowId: 10,
@@ -846,33 +814,13 @@ test('background behavior', async (t) => {
       pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
       privateWindows: true,
     });
-    await state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
-          privateWindows: false,
-        },
-        newValue: {
-          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
-          privateWindows: true,
-        },
-      },
-    }, 'sync');
+    const com = settingsOf([['p', 'https://example.com/']]);
+    const net = settingsOf([['p', 'https://example.net/']]);
+    await state.notifyChange(com, { ...com, privateWindows: true });
     assert.deepEqual(state.calls, []);
 
-    state.setStored({ pins: [{ id: 'p', url: 'https://example.net/', reload: true }], privateWindows: false });
-    await state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [{ id: 'p', url: 'https://example.com/', reload: true }],
-          privateWindows: true,
-        },
-        newValue: {
-          pins: [{ id: 'p', url: 'https://example.net/', reload: true }],
-          privateWindows: false,
-        },
-      },
-    }, 'sync');
+    state.setStored(net);
+    await state.notifyChange({ ...com, privateWindows: true }, net);
     assert.deepEqual(state.calls, [[
       'update',
       1,
@@ -883,18 +831,7 @@ test('background behavior', async (t) => {
 
   await t.test('no-op storage notifications do nothing', async () => {
     const state = await setup();
-    await state.events.storage.listener({
-      settings: {
-        oldValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
-          privateWindows: false,
-        },
-        newValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
-          privateWindows: false,
-        },
-      },
-    }, 'sync');
+    await state.notifyChange(single(), single());
     assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
     assert.deepEqual(state.calls, []);
   });
@@ -996,58 +933,22 @@ test('background behavior', async (t) => {
     });
     state.markers.set(2, { id: 'https://example.com/', url: 'https://example.com/' });
     state.failUpdate(2);
-    const change = {
-      settings: {
-        oldValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
-          privateWindows: false,
-        },
-        newValue: {
-          pins: [{ url: 'https://example.com/', reload: true }],
-          privateWindows: true,
-        },
-      },
-    };
-    const originalError = console.error;
-    console.error = () => {};
-    try {
+    await quietly(async () => {
       await Promise.all([
-        state.events.storage.listener(change, 'sync'),
-        state.events.storage.listener(change, 'sync'),
+        state.notifyChange(single(), single(true)),
+        state.notifyChange(single(), single(true)),
       ]);
       await new Promise(setImmediate);
-    } finally {
-      console.error = originalError;
-    }
+    });
     assert.equal(state.tabs[1].pinned, false);
     assert.equal(state.markers.has(2), false);
   });
 
   await t.test('transient marker reads do not duplicate pins', async () => {
     const state = await setup();
-    state.setStored({
-      pins: [{ url: 'https://example.com/', reload: true }],
-      privateWindows: true,
-    });
+    state.setStored(single(true));
     state.failSessionRead(1);
-    const originalError = console.error;
-    console.error = () => {};
-    try {
-      await state.events.storage.listener({
-        settings: {
-          oldValue: {
-            pins: [{ url: 'https://example.com/', reload: true }],
-            privateWindows: false,
-          },
-          newValue: {
-            pins: [{ url: 'https://example.com/', reload: true }],
-            privateWindows: true,
-          },
-        },
-      }, 'sync');
-    } finally {
-      console.error = originalError;
-    }
+    await quietly(() => state.notifyChange(single(), single(true)));
     assert.deepEqual(state.calls, []);
   });
 
@@ -1079,25 +980,123 @@ test('background behavior', async (t) => {
     assert.deepEqual(state.calls, []);
   });
 
+  await t.test('removals while a window closes are ignored', async () => {
+    const state = await setup();
+    state.tabs.splice(0, 1);
+    state.markers.delete(1);
+    await state.events.removed.listener(1, {
+      windowId: 10,
+      isWindowClosing: true,
+    });
+    await settle();
+    assert.deepEqual(state.calls, []);
+  });
+
+  await t.test('an unpinned managed tab is pinned again', async () => {
+    const state = await setup();
+    state.tabs[0].pinned = false;
+    state.events.updated.listener(1, { pinned: false }, state.tabs[0]);
+    await settle();
+    assert.deepEqual(state.calls, [['update', 1, { pinned: true }]]);
+  });
+
+  await t.test('unpinning an ordinary tab is ignored', async () => {
+    const state = await setup();
+    state.events.updated.listener(99, { pinned: false }, {
+      id: 99,
+      windowId: 10,
+      pinned: false,
+    });
+    await settle();
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
+  });
+
+  await t.test('a moved pin returns to its place', async () => {
+    const state = await setupThree();
+    state.tabs[0].index = 1;
+    state.tabs[1].index = 0;
+    await state.events.moved.listener(1, { windowId: 10 });
+    await settle();
+    assert.deepEqual(state.calls, [['move', [1, 2, 3], { index: 0 }]]);
+  });
+
+  await t.test('moving an ordinary tab is ignored', async () => {
+    const state = await setup();
+    state.tabs.push({ id: 2, windowId: 10, index: 1, pinned: false });
+    await state.events.moved.listener(2, { windowId: 10 });
+    await settle();
+    assert.deepEqual(state.reads(), { sessionReads: 0, syncReads: 0 });
+  });
+
+  for (const [name, info] of [
+    ['attached', { newWindowId: 20, oldWindowId: 30 }],
+    ['detached', { newWindowId: 30, oldWindowId: 20 }],
+  ]) {
+    await t.test(`a ${name} tab's window is checked`, async () => {
+      const state = await setup();
+      await state.events[name].listener(5, info);
+      assert.deepEqual(state.calls, [[
+        'create',
+        {
+          windowId: 20,
+          url: 'https://example.com/',
+          active: false,
+          pinned: true,
+        },
+      ]]);
+    });
+  }
+
+  await t.test('new windows get their pins', async () => {
+    const state = await setup();
+    await state.events.windowCreated.listener({ id: 20 });
+    assert.deepEqual(state.calls, [[
+      'create',
+      {
+        windowId: 20,
+        url: 'https://example.com/',
+        active: false,
+        pinned: true,
+      },
+    ]]);
+  });
+
+  await t.test('activation reloads private pins only while allowed', async () => {
+    const state = await setup({
+      privateWindows: true,
+      windowIncognito: true,
+      initialTabs: [{
+        id: 1,
+        windowId: 10,
+        index: 0,
+        pinned: true,
+        incognito: true,
+        slot: '0',
+      }],
+    });
+    await state.events.activated.listener({ tabId: 1 });
+    assert.deepEqual(state.calls, [[
+      'update',
+      1,
+      { url: 'https://example.com/', loadReplace: true },
+    ]]);
+    state.calls.length = 0;
+    state.setStored(single(false));
+    await state.events.activated.listener({ tabId: 1 });
+    assert.deepEqual(state.calls, []);
+  });
+
+  await t.test('the toolbar button opens the options page', async () => {
+    const state = await setup();
+    state.events.actionClicked.listener();
+    assert.equal(state.optionsOpenings(), 1);
+  });
+
   await t.test('failed marker writes roll back the created tab', async () => {
     const state = await setup({ initialTabs: [], urls: [] });
-    state.setStored({ pins: [{ url: 'https://example.com/', reload: true }], privateWindows: false });
+    state.setStored(single());
     state.failMarker();
-    const originalError = console.error;
-    console.error = () => {};
-    try {
-      await state.events.storage.listener({
-        settings: {
-          oldValue: { pins: [], privateWindows: false },
-          newValue: {
-            pins: [{ url: 'https://example.com/', reload: true }],
-            privateWindows: false,
-          },
-        },
-      }, 'sync');
-    } finally {
-      console.error = originalError;
-    }
+    await quietly(() => state.notifyChange({ pins: [], privateWindows: false }, single()));
     assert.deepEqual(state.calls, [
       ['create', {
         windowId: 10,
@@ -1111,25 +1110,9 @@ test('background behavior', async (t) => {
 
   await t.test('invalid synced settings do not modify tabs', async () => {
     const state = await setup();
-    state.setStored({ pins: 'https://invalid.example', privateWindows: false });
-    const originalError = console.error;
-    console.error = () => {};
-    try {
-      await state.events.storage.listener({
-        settings: {
-          oldValue: {
-            pins: [{ url: 'https://example.com/', reload: true }],
-            privateWindows: false,
-          },
-          newValue: {
-            pins: 'https://invalid.example',
-            privateWindows: false,
-          },
-        },
-      }, 'sync');
-    } finally {
-      console.error = originalError;
-    }
+    const invalid = { pins: 'https://invalid.example', privateWindows: false };
+    state.setStored(invalid);
+    await quietly(() => state.notifyChange(single(), invalid));
     assert.deepEqual(state.calls, []);
   });
 });

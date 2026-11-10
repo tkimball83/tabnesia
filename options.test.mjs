@@ -5,6 +5,7 @@ import { getMessage } from './i18n-mock.mjs';
 
 let moduleNumber = 0;
 let focused;
+let formEl;
 
 function makeEl(className = '') {
   const node = {
@@ -78,6 +79,10 @@ function makeEl(className = '') {
     },
     remove() {
       if (!node.parent) return;
+      // As in a browser, removing an element blurs whatever had focus in it.
+      let inside = focused;
+      while (inside && inside !== node) inside = inside.parent;
+      if (inside) focused = undefined;
       const siblings = node.parent.children;
       siblings.splice(siblings.indexOf(node), 1);
       node.parent = null;
@@ -105,7 +110,7 @@ function makeEl(className = '') {
       return current.isRoot;
     },
     focus() {
-      if (!node.disabled) focused = node;
+      if (!node.disabled && !formEl?.inert) focused = node;
     },
     getBoundingClientRect() {
       return { top: node.parent.children.indexOf(node) * 10 };
@@ -135,13 +140,22 @@ async function setup({ urls, loadError, rawSettings } = {}) {
   focused = undefined;
   const ids = Object.fromEntries([
     'settings', 'pins', 'private-windows', 'private-help',
-    'status', 'external-change', 'pin-limit', 'add', 'export', 'import',
+    'status', 'external-change', 'pin-limit', 'add', 'export', 'import', 'save',
   ].map((id) => [id, makeEl()]));
   ids['external-change'].hidden = true;
-  // The form starts inert, as options.html declares it.
-  ids.settings.inert = true;
+  // The form starts inert, as options.html declares it, and as in a browser,
+  // inerting it blurs whatever had focus.
+  let inert = true;
+  Object.defineProperty(ids.settings, 'inert', {
+    get: () => inert,
+    set: (value) => {
+      inert = value;
+      if (value) focused = undefined;
+    },
+  });
+  formEl = ids.settings;
   ids['pin-limit'].hidden = true;
-  ids.pins.isRoot = true;
+  for (const el of Object.values(ids)) el.isRoot = true;
   ids['row-template'] = {
     content: {
       firstElementChild: { cloneNode: () => makeRow() },
@@ -150,10 +164,11 @@ async function setup({ urls, loadError, rawSettings } = {}) {
   };
 
   globalThis.document = {
-    documentElement: {},
+    get activeElement() {
+      return focused;
+    },
     querySelector: (selector) => ids[selector.slice(1)],
     querySelectorAll: () => [],
-    addEventListener() {},
     createElement: () => ({ click() {} }),
   };
 
@@ -163,7 +178,7 @@ async function setup({ urls, loadError, rawSettings } = {}) {
   let storageListener;
   globalThis.browser = {
     extension: { isAllowedIncognitoAccess: async () => true },
-    i18n: { getMessage, getUILanguage: () => 'en-US' },
+    i18n: { getMessage },
     storage: {
       sync: {
         get: async () => {
@@ -191,13 +206,25 @@ async function setup({ urls, loadError, rawSettings } = {}) {
   moduleNumber += 1;
   await new Promise(setImmediate);
 
+  // Waits a bounded time, so a save that never writes fails instead of hanging.
+  const takeSet = async () => {
+    for (let turn = 0; !pendingSet; turn += 1) {
+      if (turn === 1000) throw new Error('No storage write arrived');
+      await new Promise(setImmediate);
+    }
+    const taken = pendingSet;
+    pendingSet = undefined;
+    return taken;
+  };
+
   const list = ids.pins;
   return {
-    list,
     status: ids.status,
     warning: ids['external-change'],
     pinLimit: ids['pin-limit'],
     add: ids.add,
+    save: ids.save,
+    exportBackup: () => ids.export.dispatch('click'),
     row: (index) => list.children[index],
     urls: () => list.children.map((row) => row.querySelector('.url').value),
     focused: () => focused,
@@ -225,19 +252,15 @@ async function setup({ urls, loadError, rawSettings } = {}) {
     ),
     rawChange: (changes, area) => storageListener(changes, area),
     submit: () => ids.settings.dispatch('submit', { preventDefault() {} }),
-    importFile: (text) => ids.import.dispatch('change', {
-      target: { files: [{ text: async () => text }], value: '' },
-    }),
-    finishSet: async () => {
-      while (!pendingSet) await new Promise(setImmediate);
-      pendingSet.resolve();
-      pendingSet = undefined;
+    // Firefox fires input on the file picker, which bubbles to the form.
+    importFile: async (text) => {
+      await ids.settings.dispatch('input', { target: ids.import });
+      await ids.import.dispatch('change', {
+        target: { files: [{ text: async () => text }], value: '' },
+      });
     },
-    failSet: async () => {
-      while (!pendingSet) await new Promise(setImmediate);
-      pendingSet.reject(new Error('Sync unavailable'));
-      pendingSet = undefined;
-    },
+    finishSet: async () => (await takeSet()).resolve(),
+    failSet: async () => (await takeSet()).reject(new Error('Sync unavailable')),
     form: ids.settings,
     setCalls: () => setCalls,
     lastSet: () => lastSet,
@@ -328,8 +351,18 @@ test('options page rows and reordering', async (t) => {
 
     await state.click(up);
     assert.deepEqual(state.urls(), [THREE[2], THREE[0], THREE[1]]);
-    assert.equal(state.focused(), up.closest('.pin').querySelector('.down'));
+    const down = up.closest('.pin').querySelector('.down');
+    assert.equal(state.focused(), down);
     assert.equal(up.disabled, true);
+
+    await state.click(down);
+    assert.deepEqual(state.urls(), [THREE[0], THREE[2], THREE[1]]);
+    assert.equal(state.focused(), down);
+
+    await state.click(down);
+    assert.deepEqual(state.urls(), THREE);
+    assert.equal(state.focused(), up);
+    assert.equal(down.disabled, true);
   });
 
   await t.test('removing a row hands focus to a neighbor', async () => {
@@ -394,6 +427,7 @@ test('options page rows and reordering', async (t) => {
     const state = await setup({ urls: THREE });
     await state.drag.startFromInput(state.row(0));
     await state.drag.over(state.row(2), true);
+    assert.deepEqual(state.urls(), THREE);
     await state.drag.end();
     assert.deepEqual(state.urls(), THREE);
     assert.equal(state.status.textContent, '');
@@ -407,6 +441,35 @@ test('options page rows and reordering', async (t) => {
     await state.drag.end();
     assert.deepEqual(state.urls(), THREE);
     assert.equal(state.status.textContent, '');
+  });
+});
+
+test('options page focus after an operation', async (t) => {
+  await t.test('returns to the control that had it', async () => {
+    const state = await setup();
+    state.add.focus();
+    const saving = state.submit();
+    state.finishSet();
+    await saving;
+    assert.equal(state.focused(), state.add);
+  });
+
+  await t.test('falls back to Save when a re-render removed it', async () => {
+    const state = await setup({ urls: THREE });
+    state.row(0).querySelector('.url').focus();
+    const saving = state.submit();
+    state.finishSet();
+    await saving;
+    assert.equal(state.focused(), state.save);
+  });
+
+  await t.test('stays on the field a failed save left in place', async () => {
+    const state = await setup({ urls: THREE });
+    const url = state.row(0).querySelector('.url');
+    url.value = 'not a url';
+    url.focus();
+    await state.submit();
+    assert.equal(state.focused(), url);
   });
 });
 
@@ -522,6 +585,36 @@ test('options page external-change warning', async (t) => {
       privateWindows: false,
     });
     assert.equal(state.warning.hidden, false);
+  });
+
+  await t.test('exporting or a failed import keeps the unsaved mark', async (st) => {
+    st.mock.method(globalThis, 'setTimeout', () => {});
+    const state = await setup({ urls: ['https://a.example/'] });
+    await state.exportBackup();
+    assert.equal(state.status.textContent, 'Backup exported');
+    await state.importFile('not json');
+    assert.equal(
+      state.status.textContent,
+      'The selected file is not valid JSON.',
+    );
+
+    await state.click(state.row(0).querySelector('.reload'));
+    await state.exportBackup();
+    assert.equal(
+      state.status.textContent,
+      'Backup exported · Unsaved changes',
+    );
+    await state.importFile('not json');
+    assert.equal(
+      state.status.textContent,
+      'The selected file is not valid JSON. · Unsaved changes',
+    );
+
+    const saving = state.submit();
+    state.finishSet();
+    await saving;
+    await state.exportBackup();
+    assert.equal(state.status.textContent, 'Backup exported');
   });
 
   await t.test('a failed re-save keeps suppressing the prior echo', async () => {
