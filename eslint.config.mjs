@@ -4,7 +4,6 @@ export default [
       'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-constant-condition': 'error',
-      'no-dupe-args': 'error',
       'no-dupe-keys': 'error',
       'no-duplicate-case': 'error',
       'no-unreachable': 'error',
@@ -30,7 +29,6 @@ export default [
         structuredClone: 'readonly',
         crypto: 'readonly',
         Blob: 'readonly',
-        globalThis: 'writable',
       },
     },
   },
@@ -40,7 +38,6 @@ export default [
       globals: {
         process: 'readonly',
         window: 'readonly',
-        clearTimeout: 'readonly',
       },
     },
   },

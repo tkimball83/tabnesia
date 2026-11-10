@@ -10,15 +10,16 @@ import {
 // The last commit of 1.0.0, the version on AMO before 1.1.0.
 const UPGRADE_FROM = process.env.UPGRADE_FROM ?? '462d647';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const results = [];
+let passed = 0;
+let failed = 0;
 
 async function step(name, work) {
   try {
     await work();
-    results.push(['PASS', name]);
+    passed += 1;
     console.log(`PASS  ${name}`);
   } catch (error) {
-    results.push(['FAIL', name, error.message]);
+    failed += 1;
     console.log(`FAIL  ${name}\n      ${error.message.slice(0, 600)}`);
   }
 }
@@ -128,6 +129,8 @@ async function currentBuildScenarios() {
       // The idle timeout is one second; give it time to suspend.
       await sleep(4000);
       await save([['ib', '/b'], ['id', '/d', false], ['ie', '/e']]);
+      // Before anything messages the background: only the change can wake it.
+      await waitFor(() => ({ ok: server.hits('/e') === 1, detail: 'no load of /e' }));
       await expectPins(page, [['ib', url('/b')], ['id', url('/d')], ['ie', url('/e')]]);
       assert.equal(server.hits('/e'), 1);
     });
@@ -216,6 +219,5 @@ async function upgradeScenario() {
 
 await upgradeScenario();
 await currentBuildScenarios();
-const failed = results.filter(([status]) => status === 'FAIL');
-console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
-process.exitCode = failed.length ? 1 : 0;
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exitCode = failed ? 1 : 0;

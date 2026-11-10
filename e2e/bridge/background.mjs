@@ -13,9 +13,6 @@ browser.runtime.onMessage.addListener(async (message) => {
         marker: await browser.sessions.getTabValue(tab.id, 'tabnesiaSlot'),
       })));
     }
-    case 'setSettings':
-      await browser.storage.sync.set({ settings: message.value });
-      return true;
     case 'removeSettings':
       await browser.storage.sync.remove('settings');
       return true;

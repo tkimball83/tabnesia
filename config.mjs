@@ -1,4 +1,4 @@
-const DEFAULT_SETTINGS = { pins: [], privateWindows: false };
+export const DEFAULT_SETTINGS = { pins: [], privateWindows: false };
 const SYNC_ITEM_LIMIT = 8192;
 export const SETTINGS_KEY = 'settings';
 
@@ -72,9 +72,9 @@ export function serializeSettings(settings) {
   };
 }
 
-export async function saveSettings(storage, value) {
-  const current = parseSettings(value);
-  const stored = serializeSettings(current);
+// Takes settings that parseSettings has already validated.
+export async function saveSettings(storage, settings) {
+  const stored = serializeSettings(settings);
   const bytes = new TextEncoder().encode(
     `${SETTINGS_KEY}${JSON.stringify(stored)}`,
   );
@@ -82,7 +82,6 @@ export async function saveSettings(storage, value) {
     throw new Error(t('errorSyncLimit'));
   }
   await storage.sync.set({ [SETTINGS_KEY]: stored });
-  return current;
 }
 
 // Stored settings that were read but cannot be used, as opposed to a read
@@ -100,7 +99,7 @@ export async function findSettings(storage) {
 }
 
 export async function loadSettings(storage) {
-  return await findSettings(storage) ?? { ...DEFAULT_SETTINGS };
+  return await findSettings(storage) ?? DEFAULT_SETTINGS;
 }
 
 export function parseBackup(text) {

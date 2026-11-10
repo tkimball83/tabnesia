@@ -84,10 +84,10 @@ test('reports the Firefox sync item limit before saving', async () => {
     sync: { set: async () => assert.fail('unexpected write') },
   };
   await assert.rejects(
-    saveSettings(storage, {
+    saveSettings(storage, parseSettings({
       pins: [{ url: `https://example.com/${'x'.repeat(8200)}`, reload: true }],
       privateWindows: false,
-    }),
+    })),
     /8 KB/,
   );
 });
@@ -99,11 +99,11 @@ test('rejects malformed stored settings', () => {
   );
   assert.throws(
     () => parseSettings({ pins: [null], privateWindows: false }),
-    /Invalid tabnesia settings/,
+    /Invalid Tabnesia settings/,
   );
 });
 
-test('keeps pin ids and gives 1.0.0 pins their URL as id', () => {
+test('keeps pin ids and gives 1.0.0 pins their URL as id', (t) => {
   const { pins } = parseSettings({
     pins: [
       { id: 'k1', url: 'https://a.example', reload: true },
@@ -120,12 +120,11 @@ test('keeps pin ids and gives 1.0.0 pins their URL as id', () => {
       ],
       privateWindows: false,
     }),
-    /Invalid tabnesia settings/,
+    /Invalid Tabnesia settings/,
   );
-  const taken = new Set(['aaaaaaaa']);
-  const id = newPinId(taken);
-  assert.match(id, /^[0-9a-f]{8}$/);
-  assert.equal(taken.has(id), false);
+  const uuids = ['aaaaaaaa-0000', 'bbbbbbbb-0000'];
+  t.mock.method(crypto, 'randomUUID', () => uuids.shift());
+  assert.equal(newPinId(new Set(['aaaaaaaa'])), 'bbbbbbbb');
 });
 
 test('1.0.0 settings that fit still save, byte for byte', async () => {

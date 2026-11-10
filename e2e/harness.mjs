@@ -3,7 +3,7 @@
 // HTTP server whose pages count their loads.
 import { execFileSync } from 'node:child_process';
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -11,16 +11,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
-export const REPO = fileURLToPath(new URL('..', import.meta.url));
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 const BRIDGE = fileURLToPath(new URL('bridge/', import.meta.url));
-const EXTENSION_ID = '{ec455cb3-9733-47fb-9a56-85fc0397eac0}';
-const MAC_FIREFOX = '/Applications/Firefox.app/Contents/MacOS/firefox';
 const FIREFOX = process.env.FIREFOX
-  ?? (existsSync(MAC_FIREFOX) ? MAC_FIREFOX : 'firefox');
-// Staged extension copies, removed when the run ends.
-const staged = [];
+  ?? '/Applications/Firefox.app/Contents/MacOS/firefox';
+// Staged extensions and Firefox profiles, removed when the run ends, even on
+// Ctrl-C (Puppeteer's own SIGINT handler kills Firefox and exits).
+const temporary = [];
 process.once('exit', () => {
-  for (const dir of staged) rmSync(dir, { recursive: true, force: true });
+  for (const dir of temporary) rmSync(dir, { recursive: true, force: true });
 });
 const EXTENSION_FILES = [
   '_locales', 'icons', 'background.mjs', 'config.mjs', 'manifest.json',
@@ -34,7 +33,7 @@ const EXTENSION_FILES = [
 // extension's own code never reads them.
 export function stageExtension(revision) {
   const dir = mkdtempSync(join(tmpdir(), 'tabnesia-e2e-extension-'));
-  staged.push(dir);
+  temporary.push(dir);
   const files = revision && execFileSync(
     'git',
     ['-C', REPO, 'ls-tree', '-r', '--name-only', revision],
@@ -89,6 +88,7 @@ export async function startServer() {
 // removes its profile.
 export async function launch() {
   const profile = mkdtempSync(join(tmpdir(), 'tabnesia-e2e-profile-'));
+  temporary.push(profile);
   const browser = await puppeteer.launch({
     browser: 'firefox',
     executablePath: FIREFOX,
@@ -98,9 +98,6 @@ export async function launch() {
     args: ['--no-remote', '--new-instance'],
     env: { ...process.env, MOZ_NO_REMOTE: '1' },
     extraPrefsFirefox: {
-      'extensions.webextensions.uuids': JSON.stringify({
-        [EXTENSION_ID]: '11111111-2222-3333-4444-555555555555',
-      }),
       // Suspend the background script after a second idle, so the paths
       // that wake it really run.
       'extensions.background.idle.timeout': 1000,
@@ -110,7 +107,6 @@ export async function launch() {
     await browser.close().catch(() => {});
     rmSync(profile, { recursive: true, force: true });
   };
-  process.once('SIGINT', () => close().finally(() => process.exit(130)));
   return { browser, close };
 }
 
@@ -130,6 +126,7 @@ export async function call(page, message) {
       resolve(event.data.tabnesiaTestReply.result);
     };
     window.addEventListener('message', onReply);
+    setTimeout(() => resolve({ error: 'No reply from the bridge' }), 10000);
     window.postMessage({ tabnesiaTest: { id, message: payload } }, '*');
   }), message);
   if (result?.error) throw new Error(result.error);
