@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Dev tooling only; the extension has no runtime dependencies.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # Minor and patch updates arrive as one PR; majors get their own.
+      dev-tooling:
+        patterns: ['*']
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
