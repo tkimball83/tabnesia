@@ -1,20 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
   <title id="title">Tabnesia</title>
   <defs>
-    <clipPath id="arcClip">
-      <rect x="0" y="0" width="216" height="512"/>
-      <rect x="296" y="0" width="216" height="512"/>
-    </clipPath>
-    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#E8E8EC"/>
-      <stop offset="35%" stop-color="#D0D0D6"/>
-      <stop offset="50%" stop-color="#F0F0F2"/>
-      <stop offset="65%" stop-color="#B8B8C0"/>
-      <stop offset="100%" stop-color="#A0A0A8"/>
-    </linearGradient>
+    <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F1F3F6"/><stop offset="1" stop-color="#7B7E87"/></linearGradient>
   </defs>
-  <path d="M189,397 A110,110 0 1,1 323,397" fill="none" stroke="#4ADE80" stroke-width="24" stroke-linecap="round" clip-path="url(#arcClip)"/>
-  <polygon points="280,430 346,424 304,366" fill="#4ADE80"/>
-  <rect x="108" y="86" width="296" height="62" rx="31" fill="url(#metal)"/>
-  <path d="M226 148H286V320L256 365 226 320Z" fill="url(#metal)"/>
+  <rect x="21" y="21" width="470" height="470" rx="108" fill="url(#fog)" stroke="#65676F" stroke-width="10"/>
+  <g transform="translate(-11 -15)" fill="#12151C">
+    <path d="M201 430A130 130 0 0 0 379.7 272" fill="none" stroke="#12151C" stroke-width="46"/>
+    <rect x="136" y="374" width="46" height="46" fill="#272A31"/>
+    <rect x="110" y="322" width="38" height="38" fill="#41444C"/>
+    <rect x="112" y="276" width="28" height="28" fill="#595C65"/>
+    <polygon points="380,192 334,276 426,276"/>
+    <rect x="156" y="92" width="200" height="54" rx="27"/>
+    <rect x="200" y="140" width="112" height="32"/>
+    <path d="M226 170H286V312L256 384 226 312Z"/>
+  </g>
 </svg>
